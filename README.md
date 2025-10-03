@@ -39,16 +39,26 @@ A minimal, persistent macOS menu bar application that displays Islamic prayer ti
 
 ## 📸 Screenshots
 
-*Menu Bar View*
-```
-🌙 45dk
-```
+### Menu Bar
+The app lives in your menu bar with a live countdown timer:
 
-*Dropdown View*
-- Header with countdown timer
-- Next prayer highlighted in orange
-- Full daily prayer schedule
-- Settings panel for location configuration
+![Menu Bar](screenshots/menubar.png)
+*Live countdown timer showing time remaining until next prayer*
+
+---
+
+### Full App View
+Clean, modern interface with all prayer times and settings:
+
+![App View](screenshots/app-view.png)
+*Dropdown view showing next prayer, countdown, full schedule, and settings panel*
+
+**Features shown:**
+- 🕐 Live countdown in header
+- 🌙 Next prayer highlighted in orange
+- 📋 Complete daily prayer schedule
+- ⚙️ Settings panel with manual location input
+- 🔄 One-click refresh button
 
 ## 🚀 Installation
 
@@ -255,7 +265,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact
 
-Created for personal use by [@ummugulsun](https://github.com/ummugulsun)
+Created for personal use by [@ummugulsun](https://github.com/ummugulsunn)
 
 ---
 
