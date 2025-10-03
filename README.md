@@ -265,7 +265,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📧 Contact
 
-Created for personal use by [@ummugulsun](https://github.com/ummugulsunn)
+Created for personal use by [@ummugulsunn](https://github.com/ummugulsunn)
 
 ---
 
