@@ -38,15 +38,37 @@ public final class PrayerTimeViewModel: ObservableObject {
 		do {
 			let coordinate = try await resolveCoordinate()
 			print("📍 Konum: \(coordinate.latitude), \(coordinate.longitude)")
-			let timings = try await service.fetchTimings(params: .init(latitude: coordinate.latitude, longitude: coordinate.longitude))
-			print("✅ Vakitler alındı: \(timings)")
-			self.prayers = buildPrayerTimes(from: timings, on: Date())
-			self.nextPrayer = computeNextPrayer(from: prayers)
-			saveToSharedDefaults(timings: timings)
+			
+			// Bugünün vakitlerini çek
+			let todayTimings = try await service.fetchTimings(params: .init(latitude: coordinate.latitude, longitude: coordinate.longitude))
+			print("✅ Bugünün vakitleri alındı: \(todayTimings)")
+			
+			var allPrayers = buildPrayerTimes(from: todayTimings, on: Date())
+			
+			// Eğer bugünün tüm vakitleri geçmişse, yarının imsak saatini ekle
+			let now = Date()
+			let hasUpcomingPrayer = allPrayers.contains(where: { $0.date > now })
+			
+			if !hasUpcomingPrayer {
+				// Yarının vakitlerini çek
+				let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+				let tomorrowTimings = try await service.fetchTimings(params: .init(date: tomorrow, latitude: coordinate.latitude, longitude: coordinate.longitude))
+				print("✅ Yarının vakitleri alındı: \(tomorrowTimings)")
+				
+				// Sadece yarının İmsak saatini ekle
+				let tomorrowPrayers = buildPrayerTimes(from: tomorrowTimings, on: tomorrow)
+				if let tomorrowFajr = tomorrowPrayers.first(where: { $0.name == "İmsak" }) {
+					allPrayers.append(tomorrowFajr)
+				}
+			}
+			
+			self.prayers = allPrayers
+			self.nextPrayer = computeNextPrayer(from: allPrayers)
+			saveToSharedDefaults(timings: todayTimings)
 			WidgetCenter.shared.reloadAllTimelines()
 			if notificationsEnabled {
 				try? await NotificationManager.shared.requestAuthorization()
-				await NotificationManager.shared.scheduleNotifications(for: prayers, preAlertMinutes: preAlertMinutes)
+				await NotificationManager.shared.scheduleNotifications(for: allPrayers, preAlertMinutes: preAlertMinutes)
 			}
 			self.isLoading = false
 		} catch {
