@@ -1,0 +1,41 @@
+name: PrayerTimer
+options:
+  bundleIdPrefix: com.ummugulsun
+  deploymentTarget:
+    macOS: "13.0"
+settings:
+  base:
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "Apple Development"
+    DEVELOPMENT_TEAM: "F9FP3T6QTD"
+  MARKETING_VERSION: "1.0"
+  CURRENT_PROJECT_VERSION: "1"
+targets:
+  PrayerTimer:
+    type: application
+    platform: macOS
+    sources:
+      - Sources
+    settings:
+      CODE_SIGN_ENTITLEMENTS: PrayerTimerApp.entitlements
+    info:
+      path: Config/Info.plist
+      properties:
+        CFBundleName: PrayerTimer
+        CFBundleDisplayName: Prayer Timer
+        LSMinimumSystemVersion: "12.0"
+        NSLocationWhenInUseUsageDescription: "Namaz vakitlerini hesaplamak için konumunuza ihtiyacımız var."
+    dependencies:
+      - target: PrayerTimerWidget
+        embed: true
+  PrayerTimerWidget:
+    type: app-extension
+    platform: macOS
+    sources:
+      - PrayerTimerWidget
+      - path: Sources/Models
+      - path: Sources/Shared
+    settings:
+      CODE_SIGN_ENTITLEMENTS: PrayerTimerWidget.entitlements
+    info:
+      path: PrayerTimerWidget/Info.plist
