@@ -44,17 +44,36 @@ public final class PrayerTimeService {
 
 		do {
 			let (data, response) = try await URLSession.shared.data(for: request)
-			guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+			guard let http = response as? HTTPURLResponse else {
 				throw ServiceError.invalidResponse
 			}
+			
+			guard (200..<300).contains(http.statusCode) else {
+				// Provide more context for HTTP errors
+				let statusCode = http.statusCode
+				if statusCode == 400 {
+					throw ServiceError.invalidResponse
+				} else if statusCode == 429 {
+					throw ServiceError.network(NSError(domain: "PrayerTimeService", code: 429, userInfo: [NSLocalizedDescriptionKey: "Too many requests. Please try again later."]))
+				} else if statusCode >= 500 {
+					throw ServiceError.network(NSError(domain: "PrayerTimeService", code: statusCode, userInfo: [NSLocalizedDescriptionKey: "Prayer time service is temporarily unavailable. Please try again later."]))
+				} else {
+					throw ServiceError.invalidResponse
+				}
+			}
+			
 			let decoder = JSONDecoder()
 			let api = try decoder.decode(APIResponse.self, from: data)
 			return api.data.timings
 		} catch let error as DecodingError {
 			throw ServiceError.decoding(error)
+		} catch let error as ServiceError {
+			// Re-throw service errors as-is
+			throw error
 		} catch {
 			throw ServiceError.network(error)
 		}
 	}
 }
+
 

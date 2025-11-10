@@ -101,52 +101,138 @@ struct MenuBarContentView: View {
 	
 	// Ayarlar Paneli
 	private var settingsView: some View {
-		VStack(spacing: 12) {
-			VStack(alignment: .leading, spacing: 8) {
-				Text("Konum Ayarları")
-					.font(.system(size: 12, weight: .bold))
-				
-				Toggle("Otomatik Konum", isOn: $viewModel.useAutoLocation)
-					.font(.system(size: 11))
-				
-				if !viewModel.useAutoLocation {
-					VStack(alignment: .leading, spacing: 6) {
-						Text("Şehir")
-							.font(.system(size: 10))
-							.foregroundColor(.secondary)
-						TextField("İstanbul", text: $viewModel.manualCity)
-							.textFieldStyle(.roundedBorder)
-							.font(.system(size: 11))
-						
-						Text("Ülke")
-							.font(.system(size: 10))
-							.foregroundColor(.secondary)
-						TextField("Turkey", text: $viewModel.manualCountry)
-							.textFieldStyle(.roundedBorder)
-							.font(.system(size: 11))
+		ScrollView {
+			VStack(spacing: 12) {
+				// Konum Ayarları
+				VStack(alignment: .leading, spacing: 8) {
+					Text("Konum Ayarları")
+						.font(.system(size: 12, weight: .bold))
+					
+					Toggle("Otomatik Konum", isOn: $viewModel.useAutoLocation)
+						.font(.system(size: 11))
+					
+					if !viewModel.useAutoLocation {
+						VStack(alignment: .leading, spacing: 6) {
+							Text("Şehir")
+								.font(.system(size: 10))
+								.foregroundColor(.secondary)
+							TextField("İstanbul", text: $viewModel.manualCity)
+								.textFieldStyle(.roundedBorder)
+								.font(.system(size: 11))
+							
+							Text("Ülke")
+								.font(.system(size: 10))
+								.foregroundColor(.secondary)
+							TextField("Turkey", text: $viewModel.manualCountry)
+								.textFieldStyle(.roundedBorder)
+								.font(.system(size: 11))
+						}
 					}
 				}
+				.padding(12)
+				.background(Color.secondary.opacity(0.1))
+				.cornerRadius(8)
+				
+				// Hesaplama Yöntemi
+				VStack(alignment: .leading, spacing: 8) {
+					Text("Hesaplama Yöntemi")
+						.font(.system(size: 12, weight: .bold))
+					
+					Picker("Hesaplama Yöntemi", selection: $viewModel.calculationMethod) {
+						ForEach(CalculationMethod.allCases, id: \.self) { method in
+							Text(method.shortName).tag(method)
+						}
+					}
+					.pickerStyle(.menu)
+					.font(.system(size: 11))
+					
+					Text(viewModel.calculationMethod.displayName)
+						.font(.system(size: 9))
+						.foregroundColor(.secondary)
+				}
+				.padding(12)
+				.background(Color.secondary.opacity(0.1))
+				.cornerRadius(8)
+				
+				// Görünüm Ayarları
+				VStack(alignment: .leading, spacing: 8) {
+					Text("Görünüm")
+						.font(.system(size: 12, weight: .bold))
+					
+					Toggle("24 Saat Formatı", isOn: $viewModel.use24HourFormat)
+						.font(.system(size: 11))
+				}
+				.padding(12)
+				.background(Color.secondary.opacity(0.1))
+				.cornerRadius(8)
+				
+				// Bildirim Ayarları
+				VStack(alignment: .leading, spacing: 8) {
+					Text("Bildirimler")
+						.font(.system(size: 12, weight: .bold))
+					
+					Toggle("Bildirimleri Etkinleştir", isOn: $viewModel.notificationsEnabled)
+						.font(.system(size: 11))
+					
+					if viewModel.notificationsEnabled {
+						HStack {
+							Text("Önceden hatırlat:")
+								.font(.system(size: 10))
+								.foregroundColor(.secondary)
+							Spacer()
+							Stepper(
+								value: Binding(
+									get: { viewModel.preAlertMinutes ?? 0 },
+									set: { viewModel.preAlertMinutes = $0 == 0 ? nil : $0 }
+								),
+								in: 0...60,
+								step: 5
+							) {
+								Text("\(viewModel.preAlertMinutes ?? 0) dk")
+									.font(.system(size: 10))
+									.frame(minWidth: 40, alignment: .trailing)
+							}
+						}
+						
+					}
+				}
+				.padding(12)
+				.background(Color.secondary.opacity(0.1))
+				.cornerRadius(8)
+				
+				// Hata mesajı göster
+				if let error = viewModel.errorMessage {
+					HStack {
+						Image(systemName: "exclamationmark.triangle.fill")
+							.foregroundColor(.orange)
+						Text(error)
+							.font(.system(size: 10))
+							.foregroundColor(.secondary)
+					}
+					.padding(8)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.background(Color.orange.opacity(0.1))
+					.cornerRadius(6)
+				}
+				
+				Button(action: {
+					Task {
+						await viewModel.refreshTimings()
+						showSettings = false
+					}
+				}) {
+					HStack {
+						Image(systemName: "checkmark.circle.fill")
+						Text("Kaydet ve Güncelle")
+					}
+					.frame(maxWidth: .infinity)
+				}
+				.buttonStyle(.borderedProminent)
+				.controlSize(.small)
 			}
 			.padding(12)
-			.background(Color.secondary.opacity(0.1))
-			.cornerRadius(8)
-			
-			Button(action: {
-				Task {
-					await viewModel.refreshTimings()
-					showSettings = false
-				}
-			}) {
-				HStack {
-					Image(systemName: "checkmark.circle.fill")
-					Text("Kaydet ve Güncelle")
-				}
-				.frame(maxWidth: .infinity)
-			}
-			.buttonStyle(.borderedProminent)
-			.controlSize(.small)
 		}
-		.padding(12)
+		.frame(maxHeight: 400)
 	}
 	
 	// Ana İçerik
@@ -176,6 +262,23 @@ struct MenuBarContentView: View {
 			}
 			
 			Divider()
+			
+			// Error message display
+			if let error = viewModel.errorMessage, !viewModel.isLoading {
+				HStack {
+					Image(systemName: "exclamationmark.triangle.fill")
+						.foregroundColor(.orange)
+						.font(.system(size: 12))
+					Text(error)
+						.font(.system(size: 10))
+						.foregroundColor(.secondary)
+						.lineLimit(2)
+					Spacer()
+				}
+				.padding(.horizontal, 12)
+				.padding(.vertical, 8)
+				.background(Color.orange.opacity(0.1))
+			}
 			
 			// Vakitler listesi veya loading
 			if viewModel.isLoading {
