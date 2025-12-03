@@ -17,7 +17,7 @@ public final class PrayerTimeViewModel: ObservableObject {
 	@Published public var manualCountry: String = "Turkey" {
 		didSet { saveSettings() }
 	}
-	@Published public var calculationMethod: CalculationMethod = .isna {
+	@Published public var calculationMethod: CalculationMethod = .turkey {
 		didSet { saveSettings() }
 	}
 	@Published public var use24HourFormat: Bool = true {
@@ -337,6 +337,9 @@ public final class PrayerTimeViewModel: ObservableObject {
 		if let methodRaw = defaults.object(forKey: SharedDefaults.Keys.calculationMethod) as? Int,
 		   let method = CalculationMethod(rawValue: methodRaw) {
 			calculationMethod = method
+		} else {
+			// İlk kurulumda varsayılan olarak Türkiye Diyanet yöntemini kullan
+			calculationMethod = .turkey
 		}
 		use24HourFormat = defaults.object(forKey: SharedDefaults.Keys.use24HourFormat) as? Bool ?? true
 		notificationsEnabled = defaults.object(forKey: SharedDefaults.Keys.notificationsEnabled) as? Bool ?? true

@@ -32,7 +32,7 @@ public enum CalculationMethod: Int, CaseIterable, Codable {
 		case .kuwait: return "Kuwait"
 		case .qatar: return "Qatar"
 		case .singapore: return "Singapore"
-		case .turkey: return "Turkey"
+		case .turkey: return "Türkiye Diyanet İşleri Başkanlığı"
 		}
 	}
 	
@@ -51,12 +51,12 @@ public enum CalculationMethod: Int, CaseIterable, Codable {
 		case .kuwait: return "Kuwait"
 		case .qatar: return "Qatar"
 		case .singapore: return "Singapore"
-		case .turkey: return "Turkey"
+		case .turkey: return "Türkiye Diyanet İşleri Başkanlığı"
 		}
 	}
 	
 	public static var `default`: CalculationMethod {
-		.isna
+		.turkey // Türkiye için varsayılan olarak Diyanet yöntemi
 	}
 }
 
