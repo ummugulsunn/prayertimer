@@ -55,7 +55,7 @@ public final class PrayerTimeViewModel: ObservableObject {
 				// Bildirimler kapatıldığında tüm bildirimleri iptal et
 				Task {
 					let center = UNUserNotificationCenter.current()
-					await center.removeAllPendingNotificationRequests()
+					center.removeAllPendingNotificationRequests()
 				}
 			}
 		}
