@@ -3,6 +3,8 @@ import AppKit
 
 // AppDelegate - Uygulamanın sürekli çalışmasını sağlar
 class AppDelegate: NSObject, NSApplicationDelegate {
+	private var activity: NSObjectProtocol?
+	
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
 		// Ana pencere kapansa bile uygulama kapanmasın
 		return false
@@ -17,6 +19,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 	func applicationDidFinishLaunching(_ notification: Notification) {
 		// Ana pencereyi gizle (sadece menu bar app olarak çalışsın)
 		NSApp.setActivationPolicy(.accessory)
+		
+		// App Nap'i engelle - uygulama sürekli aktif kalsın
+		ProcessInfo.processInfo.disableAutomaticTermination("Prayer timer must stay active")
+		
+		// Background activity assertion - uygulamanın kapanmasını engelle
+		activity = ProcessInfo.processInfo.beginActivity(
+			options: [.userInitiated, .idleSystemSleepDisabled, .automaticTerminationDisabled],
+			reason: "Prayer timer must run continuously to show prayer times and send notifications"
+		)
+	}
+	
+	deinit {
+		if let activity = activity {
+			ProcessInfo.processInfo.endActivity(activity)
+		}
 	}
 }
 
@@ -193,7 +210,6 @@ struct MenuBarContentView: View {
 									.frame(minWidth: 40, alignment: .trailing)
 							}
 						}
-						
 					}
 				}
 				.padding(12)

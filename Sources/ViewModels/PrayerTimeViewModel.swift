@@ -252,11 +252,16 @@ public final class PrayerTimeViewModel: ObservableObject {
 		return list.first(where: { $0.date > now })
 	}
 
+	private var lastUIUpdateTime: Date = Date()
+	
 	private func startTimer() {
 		timer?.invalidate()
+		lastUIUpdateTime = Date()
 		
-		// Use RunLoop.main to ensure timer runs on main thread
-		// Adaptive update interval: update every second when < 1 hour remaining, otherwise every 10 seconds
+		// Timer runs every second, but UI updates adaptively for energy efficiency:
+		// - < 1 hour: update UI every second (accurate countdown)
+		// - < 6 hours: update UI every 10 seconds
+		// - >= 6 hours: update UI every 60 seconds
 		timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
 			Task { @MainActor in
 				guard let self = self else {
@@ -267,6 +272,7 @@ public final class PrayerTimeViewModel: ObservableObject {
 				// Recompute next prayer in case it changed
 				if let next = self.computeNextPrayer(from: self.prayers), next.id != self.nextPrayer?.id {
 					self.nextPrayer = next
+					self.lastUIUpdateTime = Date() // Reset update time when prayer changes
 				}
 				
 				guard let target = self.nextPrayer?.date else {
@@ -282,15 +288,32 @@ public final class PrayerTimeViewModel: ObservableObject {
 					return
 				}
 				
+				// Determine update interval based on remaining time
 				let hours = remaining / 3600
-				let minutes = (remaining % 3600) / 60
-				let seconds = remaining % 60
-				self.countdownText = String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+				let updateInterval: TimeInterval
+				if hours < 1 {
+					updateInterval = 1.0 // Update every second when < 1 hour
+				} else if hours < 6 {
+					updateInterval = 10.0 // Update every 10 seconds when < 6 hours
+				} else {
+					updateInterval = 60.0 // Update every minute when >= 6 hours
+				}
+				
+				// Only update UI if enough time has passed (for energy efficiency)
+				let timeSinceLastUpdate = Date().timeIntervalSince(self.lastUIUpdateTime)
+				if timeSinceLastUpdate >= updateInterval {
+					let hours = remaining / 3600
+					let minutes = (remaining % 3600) / 60
+					let seconds = remaining % 60
+					self.countdownText = String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+					self.lastUIUpdateTime = Date()
+				}
 			}
 		}
 		
-		// Add timer to RunLoop to ensure it works properly
+		// Add timer to RunLoop to ensure it works properly and survives app nap
 		RunLoop.main.add(timer!, forMode: .common)
+		RunLoop.main.add(timer!, forMode: .eventTracking)
 	}
 
 	private func saveToSharedDefaults(timings: Timings) {
