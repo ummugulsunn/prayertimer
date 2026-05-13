@@ -2,6 +2,8 @@
 import AppKit
 
 /// macOS App Icon: rounded square, night gradient, crescent + stars.
+/// Renders each PNG at **exact** pixel dimensions (Retina-safe). `NSImage.lockFocus()` on a
+/// 2x display produces wrong pixel sizes and breaks Finder / Launchpad icons.
 let sizes = [16, 32, 64, 128, 256, 512, 1024]
 
 guard CommandLine.arguments.count >= 2 else {
@@ -24,11 +26,8 @@ func starPath(cx: CGFloat, cy: CGFloat, r: CGFloat) -> NSBezierPath {
 	return p
 }
 
-func drawIcon(pixels: Int) -> NSImage {
-	let s = CGFloat(pixels)
-	let img = NSImage(size: NSSize(width: s, height: s))
-	img.lockFocus()
-
+/// Draw into the current AppKit graphics context (bitmap rep). `s` is side length in points (= pixels here).
+func drawIconContent(s: CGFloat) {
 	let corner = s * 0.2237
 	let mask = NSBezierPath(roundedRect: NSRect(x: 0, y: 0, width: s, height: s), xRadius: corner, yRadius: corner)
 	mask.addClip()
@@ -44,7 +43,6 @@ func drawIcon(pixels: Int) -> NSImage {
 	let glow = NSBezierPath(ovalIn: NSRect(x: s * 0.05, y: s * 0.55, width: s * 0.55, height: s * 0.45))
 	glow.fill()
 
-	// Crescent: full disk minus smaller offset disk (even-odd)
 	let mx = s * 0.48
 	let my = s * 0.52
 	let bigR = s * 0.32
@@ -64,18 +62,48 @@ func drawIcon(pixels: Int) -> NSImage {
 	NSColor.white.withAlphaComponent(0.95).setFill()
 	starPath(cx: s * 0.24, cy: s * 0.38, r: s * 0.026).fill()
 	starPath(cx: s * 0.58, cy: s * 0.26, r: s * 0.02).fill()
+}
 
-	img.unlockFocus()
-	return img
+func pngData(exactPixels: Int) -> Data {
+	let w = exactPixels
+	let h = exactPixels
+	guard let rep = NSBitmapImageRep(
+		bitmapDataPlanes: nil,
+		pixelsWide: w,
+		pixelsHigh: h,
+		bitsPerSample: 8,
+		samplesPerPixel: 4,
+		hasAlpha: true,
+		isPlanar: false,
+		colorSpaceName: .deviceRGB,
+		bytesPerRow: 0,
+		bitsPerPixel: 0
+	) else {
+		fatalError("NSBitmapImageRep failed for \(w)x\(h)")
+	}
+	rep.size = NSSize(width: w, height: h)
+
+	NSGraphicsContext.saveGraphicsState()
+	guard let ctx = NSGraphicsContext(bitmapImageRep: rep) else {
+		fatalError("NSGraphicsContext(bitmapImageRep:) failed")
+	}
+	NSGraphicsContext.current = ctx
+
+	let s = CGFloat(exactPixels)
+	drawIconContent(s: s)
+
+	NSGraphicsContext.restoreGraphicsState()
+
+	guard let png = rep.representation(using: .png, properties: [:]) else {
+		fatalError("PNG encode failed for \(w)")
+	}
+	return png
 }
 
 try? FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true)
 
 for px in sizes {
-	let img = drawIcon(pixels: px)
-	guard let tiff = img.tiffRepresentation,
-	      let rep = NSBitmapImageRep(data: tiff),
-	      let png = rep.representation(using: .png, properties: [:]) else { fatalError("png \(px)") }
+	let png = pngData(exactPixels: px)
 	try png.write(to: outDir.appendingPathComponent("icon_\(px).png"))
 }
 print("OK: \(sizes.count) icons → \(outDir.path)")
