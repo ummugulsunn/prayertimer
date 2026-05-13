@@ -1,4 +1,4 @@
-# PrayerTimer
+<h1 dir="auto"><img src="Sources/Assets.xcassets/AppIcon.appiconset/icon_128.png" width="36" height="36" alt="Prayer Timer app icon" style="vertical-align: middle; margin-right: 10px;"> PrayerTimer</h1>
 
 **PrayerTimer** is a native **macOS menu bar** application that shows Islamic prayer times and a live countdown to the next prayer. It is built with **SwiftUI**, uses the **Aladhan** prayer-times API, and supports manual or automatic location, calculation methods, local notifications, and an optional **widget** extension.
 
