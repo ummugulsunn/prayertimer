@@ -3,6 +3,7 @@ import SwiftUI
 public struct ContentView: View {
 	@EnvironmentObject var viewModel: PrayerTimeViewModel
 	@State private var showSettings = false
+	@State private var locationSearchDraft = ""
 
 	public init() {}
 
@@ -352,13 +353,7 @@ public struct ContentView: View {
 						.toggleStyle(.switch)
 
 					if !viewModel.useAutoLocation {
-						VStack(alignment: .leading, spacing: 8) {
-							Text("Manuel Konum").font(.caption).foregroundColor(.secondary)
-							TextField("Şehir", text: $viewModel.manualCity)
-								.textFieldStyle(.roundedBorder)
-							TextField("Ülke", text: $viewModel.manualCountry)
-								.textFieldStyle(.roundedBorder)
-						}
+						ManualLocationPicker(viewModel: viewModel, searchDraft: $locationSearchDraft)
 					}
 
 					Divider()
@@ -395,6 +390,11 @@ public struct ContentView: View {
 		.frame(minWidth: 550, minHeight: 750)
 		.onAppear {
 			viewModel.start()
+		}
+		.onChange(of: showSettings) { isOpen in
+			if isOpen {
+				locationSearchDraft = [viewModel.manualCity, viewModel.manualCountry].filter { !$0.isEmpty }.joined(separator: ", ")
+			}
 		}
 		.onExitCommand {
 			if showSettings { showSettings = false }

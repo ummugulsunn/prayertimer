@@ -1,21 +1,22 @@
 import Foundation
 
 /// Prayer time calculation methods supported by AlAdhan API
+/// Ham değerler https://api.aladhan.com/v1/methods ile bire bir eşleşmeli.
 public enum CalculationMethod: Int, CaseIterable, Codable {
 	case karachi = 1      // University of Islamic Sciences, Karachi
-	case isna = 2        // Islamic Society of North America
-	case mwl = 3         // Muslim World League
-	case ummAlQura = 4   // Umm Al-Qura University, Makkah
-	case egyptian = 5    // Egyptian General Authority of Survey
-	case tehrran = 7     // Institute of Geophysics, University of Tehran
-	case algeria = 12    // Algerian Ministry of Religious Affairs
-	case tunisia = 13    // Tunisian Ministry of Religious Affairs
-	case morocco = 14    // Moroccan Ministry of Religious Affairs
-	case dubai = 15      // UAE General Authority of Islamic Affairs
-	case kuwait = 16     // Kuwait Ministry of Awqaf and Islamic Affairs
-	case qatar = 17      // Qatari Ministry of Awqaf and Islamic Affairs
-	case singapore = 20  // Majlis Ugama Islam Singapura
-	case turkey = 21     // Turkish Directorate of Religious Affairs
+	case isna = 2         // Islamic Society of North America
+	case mwl = 3          // Muslim World League
+	case ummAlQura = 4    // Umm Al-Qura University, Makkah
+	case egyptian = 5     // Egyptian General Authority of Survey
+	case tehrran = 7      // Institute of Geophysics, University of Tehran
+	case kuwait = 9       // Kuwait
+	case qatar = 10       // Qatar
+	case singapore = 11   // Majlis Ugama Islam Singapura
+	case turkey = 13      // Diyanet İşleri Başkanlığı, Turkey
+	case dubai = 16       // Dubai (experimental)
+	case tunisia = 18     // Tunisia
+	case algeria = 19     // Algeria
+	case morocco = 21     // Morocco
 	
 	public var displayName: String {
 		switch self {

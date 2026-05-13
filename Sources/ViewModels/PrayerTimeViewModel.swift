@@ -1,7 +1,25 @@
 import Foundation
 import CoreLocation
+import MapKit
 import WidgetKit
 import UserNotifications
+
+/// Harita aramasından seçilen satır (Konum ara listesi).
+public struct MapLocationSearchResult: Identifiable, Equatable {
+	public let id: String
+	public let title: String
+	public let subtitle: String
+	public let city: String
+	public let country: String
+
+	public init(id: String, title: String, subtitle: String, city: String, country: String) {
+		self.id = id
+		self.title = title
+		self.subtitle = subtitle
+		self.city = city
+		self.country = country
+	}
+}
 
 @MainActor
 public final class PrayerTimeViewModel: ObservableObject {
@@ -81,6 +99,7 @@ public final class PrayerTimeViewModel: ObservableObject {
 	@Published public var errorMessage: String?
 	@Published public var successMessage: String?
 	@Published public var isLoading: Bool = false
+	@Published public private(set) var mapLocationSearchResults: [MapLocationSearchResult] = []
 
 	private let service: PrayerTimeService
 	private let locationManager = LocationManager()
@@ -104,6 +123,9 @@ public final class PrayerTimeViewModel: ObservableObject {
 
 	private var cachedGeocodeKey: String?
 	private var cachedGeocodeCoordinate: CLLocationCoordinate2D?
+	private var cachedGeocodeTimeZone: TimeZone?
+
+	private var mapSearchDebounceTask: Task<Void, Never>?
 
 	private var lastWidgetTimingsData: Data?
 	private var lastWidgetTimeZoneId: String?
@@ -116,6 +138,84 @@ public final class PrayerTimeViewModel: ObservableObject {
 	deinit {
 		countdownWorkItem?.cancel()
 		debouncedSaveTask?.cancel()
+		mapSearchDebounceTask?.cancel()
+	}
+
+	/// Konum metninde arama; sonuçlar `mapLocationSearchResults` içinde (kaydırmalı listede gösterilir).
+	public func scheduleDebouncedLocationSearch(query: String) {
+		mapSearchDebounceTask?.cancel()
+		let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+		guard trimmed.count >= 2 else {
+			mapLocationSearchResults = []
+			return
+		}
+		mapSearchDebounceTask = Task {
+			try? await Task.sleep(nanoseconds: 380_000_000)
+			guard !Task.isCancelled else { return }
+			await runMapLocationSearch(query: trimmed)
+		}
+	}
+
+	public func clearMapLocationSearchResults() {
+		mapLocationSearchResults = []
+	}
+
+	public func applyMapLocationSearchResult(_ result: MapLocationSearchResult) {
+		manualCity = result.city
+		manualCountry = result.country
+		mapLocationSearchResults = []
+		invalidateGeocodeCache()
+	}
+
+	private func runMapLocationSearch(query: String) async {
+		let request = MKLocalSearch.Request()
+		request.naturalLanguageQuery = query
+		request.resultTypes = [.address, .pointOfInterest]
+		let search = MKLocalSearch(request: request)
+		do {
+			let response = try await search.start()
+			let rows: [MapLocationSearchResult] = response.mapItems.prefix(12).compactMap { item in
+				let pm = item.placemark
+				let city = pm.locality
+					?? pm.subAdministrativeArea
+					?? pm.administrativeArea
+					?? item.name
+					?? ""
+				let country = pm.country ?? pm.isoCountryCode ?? ""
+				let title = item.name ?? city
+				let subtitleParts = [pm.locality, pm.administrativeArea, country].compactMap { $0 }.filter { !$0.isEmpty }
+				let subtitle = subtitleParts.joined(separator: ", ")
+				guard !city.isEmpty || !title.isEmpty else { return nil }
+				let lat = item.placemark.coordinate.latitude
+				let lon = item.placemark.coordinate.longitude
+				let id = "\(title)|\(subtitle)|\(lat),\(lon)"
+				return MapLocationSearchResult(
+					id: id,
+					title: title.isEmpty ? city : title,
+					subtitle: subtitle,
+					city: city.isEmpty ? title : city,
+					country: country
+				)
+			}
+			mapLocationSearchResults = rows
+		} catch {
+			mapLocationSearchResults = []
+		}
+	}
+
+	/// Eski uygulama sürümlerinde `CalculationMethod.rawValue` yanlış API id’lerine yazardı.
+	private static func migrateLegacyCalculationMethodRaw(_ stored: Int) -> Int {
+		switch stored {
+		case 12: return 19
+		case 13: return 18
+		case 14: return 21
+		case 15: return 16
+		case 16: return 9
+		case 17: return 10
+		case 20: return 11
+		case 21: return 13
+		default: return stored
+		}
 	}
 
 	public func start() {
@@ -146,14 +246,16 @@ public final class PrayerTimeViewModel: ObservableObject {
 		isLoading = true
 		errorMessage = nil
 		do {
-			let coordinate = try await resolveCoordinate()
+			let resolved = try await resolveCoordinate()
+			let coordinate = resolved.coordinate
+			let civilForRequest = resolved.geocodeTimeZone ?? prayerLocationTimeZone
 
 			let todayResult = try await service.fetchPrayerDay(params: .init(
 				date: Date(),
 				latitude: coordinate.latitude,
 				longitude: coordinate.longitude,
 				method: calculationMethod.rawValue,
-				civilDateTimeZone: prayerLocationTimeZone
+				civilDateTimeZone: civilForRequest
 			))
 			let tz = todayResult.timeZone
 			prayerLocationTimeZone = tz
@@ -247,25 +349,27 @@ public final class PrayerTimeViewModel: ObservableObject {
 	private func invalidateGeocodeCache() {
 		cachedGeocodeKey = nil
 		cachedGeocodeCoordinate = nil
+		cachedGeocodeTimeZone = nil
 	}
 
-	private func resolveCoordinate() async throws -> CLLocationCoordinate2D {
+	private func resolveCoordinate() async throws -> ResolvedCoordinate {
 		if useAutoLocation {
-			return try await locationManager.requestOneShotLocation()
-		} else {
-			let query = [manualCity, manualCountry].filter { !$0.isEmpty }.joined(separator: ", ")
-			if query.isEmpty { throw LocationManager.LocationError.unableToFindLocation }
-			if query == cachedGeocodeKey, let c = cachedGeocodeCoordinate {
-				return c
-			}
-			let coord = try await geocode(query: query)
-			cachedGeocodeKey = query
-			cachedGeocodeCoordinate = coord
-			return coord
+			let c = try await locationManager.requestOneShotLocation()
+			return ResolvedCoordinate(coordinate: c, geocodeTimeZone: nil)
 		}
+		let query = [manualCity, manualCountry].filter { !$0.isEmpty }.joined(separator: ", ")
+		if query.isEmpty { throw LocationManager.LocationError.unableToFindLocation }
+		if query == cachedGeocodeKey, let c = cachedGeocodeCoordinate {
+			return ResolvedCoordinate(coordinate: c, geocodeTimeZone: cachedGeocodeTimeZone)
+		}
+		let geo = try await geocode(query: query)
+		cachedGeocodeKey = query
+		cachedGeocodeCoordinate = geo.coordinate
+		cachedGeocodeTimeZone = geo.timeZone
+		return ResolvedCoordinate(coordinate: geo.coordinate, geocodeTimeZone: geo.timeZone)
 	}
 
-	private func geocode(query: String) async throws -> CLLocationCoordinate2D {
+	private func geocode(query: String) async throws -> (coordinate: CLLocationCoordinate2D, timeZone: TimeZone?) {
 		try await withCheckedThrowingContinuation { continuation in
 			let geocoder = CLGeocoder()
 			geocoder.geocodeAddressString(query) { placemarks, error in
@@ -273,13 +377,20 @@ public final class PrayerTimeViewModel: ObservableObject {
 					continuation.resume(throwing: error)
 					return
 				}
-				if let loc = placemarks?.first?.location?.coordinate {
-					continuation.resume(returning: loc)
-				} else {
+				guard let mark = placemarks?.first,
+				      let coord = mark.location?.coordinate else {
 					continuation.resume(throwing: LocationManager.LocationError.unableToFindLocation)
+					return
 				}
+				continuation.resume(returning: (coord, mark.timeZone))
 			}
 		}
+	}
+
+	private struct ResolvedCoordinate {
+		let coordinate: CLLocationCoordinate2D
+		/// Manuel konumda `CLGeocoder` tahmini; yanıttaki `meta.timezone` ile güncellenir.
+		let geocodeTimeZone: TimeZone?
 	}
 
 	private func updatePrayerTimeStrings() {
@@ -431,12 +542,19 @@ public final class PrayerTimeViewModel: ObservableObject {
 		if let country = defaults.string(forKey: SharedDefaults.Keys.manualCountry), !country.isEmpty {
 			manualCountry = country
 		}
-		if let methodRaw = defaults.object(forKey: SharedDefaults.Keys.calculationMethod) as? Int,
-		   let method = CalculationMethod(rawValue: methodRaw) {
-			calculationMethod = method
+		let methodSchema = defaults.integer(forKey: SharedDefaults.Keys.calculationMethodSchemaVersion)
+		if let methodRaw = defaults.object(forKey: SharedDefaults.Keys.calculationMethod) as? Int {
+			if methodSchema < 2 {
+				let migrated = Self.migrateLegacyCalculationMethodRaw(methodRaw)
+				calculationMethod = CalculationMethod(rawValue: migrated) ?? .turkey
+				defaults.set(calculationMethod.rawValue, forKey: SharedDefaults.Keys.calculationMethod)
+			} else {
+				calculationMethod = CalculationMethod(rawValue: methodRaw) ?? .turkey
+			}
 		} else {
 			calculationMethod = .turkey
 		}
+		defaults.set(2, forKey: SharedDefaults.Keys.calculationMethodSchemaVersion)
 		use24HourFormat = defaults.object(forKey: SharedDefaults.Keys.use24HourFormat) as? Bool ?? true
 		displayTimeFormatter.dateFormat = use24HourFormat ? "HH:mm" : "h:mm a"
 		if let tzId = defaults.string(forKey: SharedDefaults.Keys.latestPrayerTimeZoneID),

@@ -33,7 +33,7 @@ public enum TimingsCodec {
 		let ymd = cal.dateComponents([.year, .month, .day], from: date)
 
 		return pairs.compactMap { name, timeStr -> PrayerTime? in
-			let trimmed = timeStr.trimmingCharacters(in: .whitespacesAndNewlines)
+			let trimmed = normalizeAladhanTimeComponent(timeStr)
 			guard !trimmed.isEmpty else { return nil }
 
 			let hmParts = trimmed.split(separator: ":")
@@ -54,5 +54,23 @@ public enum TimingsCodec {
 			guard let dt = cal.date(from: comps) else { return nil }
 			return PrayerTime(id: name, name: name, timeString: trimmed, date: dt)
 		}.sorted(by: { $0.date < $1.date })
+	}
+
+	/// API bazen "HH:mm" yerine sonek veya saniye döndürebilir; yalnızca saat/dakika kısmını alır.
+	private static func normalizeAladhanTimeComponent(_ raw: String) -> String {
+		var s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+		if let paren = s.firstIndex(of: "(") {
+			s = String(s[..<paren]).trimmingCharacters(in: .whitespacesAndNewlines)
+		}
+		if let sp = s.firstIndex(of: " ") {
+			s = String(s[..<sp]).trimmingCharacters(in: .whitespacesAndNewlines)
+		}
+		let parts = s.split(separator: ":")
+		if parts.count >= 2 {
+			let h = String(parts[0])
+			let m = String(parts[1].prefix(2))
+			return "\(h):\(m)"
+		}
+		return s
 	}
 }

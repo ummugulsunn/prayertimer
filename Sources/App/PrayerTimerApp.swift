@@ -29,6 +29,7 @@ struct MenuBarContentView: View {
 	@State private var hasStarted = false
 	@State private var showSettings = false
 	@State private var confirmQuit = false
+	@State private var locationSearchDraft = ""
 	
 	var body: some View {
 		VStack(spacing: 0) {
@@ -127,6 +128,11 @@ struct MenuBarContentView: View {
 				viewModel.start()
 			}
 		}
+		.onChange(of: showSettings) { isOpen in
+			if isOpen {
+				locationSearchDraft = [viewModel.manualCity, viewModel.manualCountry].filter { !$0.isEmpty }.joined(separator: ", ")
+			}
+		}
 	}
 	
 	// Ayarlar Paneli
@@ -142,21 +148,7 @@ struct MenuBarContentView: View {
 						.font(.system(size: 11))
 					
 					if !viewModel.useAutoLocation {
-						VStack(alignment: .leading, spacing: 6) {
-							Text("Şehir")
-								.font(.system(size: 10))
-								.foregroundColor(.secondary)
-							TextField("İstanbul", text: $viewModel.manualCity)
-								.textFieldStyle(.roundedBorder)
-								.font(.system(size: 11))
-							
-							Text("Ülke")
-								.font(.system(size: 10))
-								.foregroundColor(.secondary)
-							TextField("Turkey", text: $viewModel.manualCountry)
-								.textFieldStyle(.roundedBorder)
-								.font(.system(size: 11))
-						}
+						ManualLocationPicker(viewModel: viewModel, searchDraft: $locationSearchDraft)
 					}
 				}
 				.padding(12)
@@ -168,13 +160,32 @@ struct MenuBarContentView: View {
 					Text("Hesaplama Yöntemi")
 						.font(.system(size: 12, weight: .bold))
 					
-					Picker("Hesaplama Yöntemi", selection: $viewModel.calculationMethod) {
-						ForEach(CalculationMethod.allCases, id: \.self) { method in
-							Text(method.shortName).tag(method)
+					ScrollView {
+						LazyVStack(alignment: .leading, spacing: 2) {
+							ForEach(CalculationMethod.allCases, id: \.self) { method in
+								Button {
+									viewModel.calculationMethod = method
+								} label: {
+									HStack {
+										Text(method.shortName)
+											.font(.system(size: 11))
+										Spacer()
+										if viewModel.calculationMethod == method {
+											Image(systemName: "checkmark.circle.fill")
+												.font(.system(size: 11))
+												.foregroundColor(.accentColor)
+										}
+									}
+									.padding(.vertical, 5)
+									.padding(.horizontal, 8)
+									.background(viewModel.calculationMethod == method ? Color.accentColor.opacity(0.12) : Color.clear)
+									.cornerRadius(6)
+								}
+								.buttonStyle(.plain)
+							}
 						}
 					}
-					.pickerStyle(.menu)
-					.font(.system(size: 11))
+					.frame(maxHeight: 140)
 					
 					Text(viewModel.calculationMethod.displayName)
 						.font(.system(size: 9))
