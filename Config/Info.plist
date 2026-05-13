@@ -22,8 +22,10 @@
 	<string>1</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
-	<key>LSAppNapIsDisabled</key>
-	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.lifestyle</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Namaz vakitlerini hesaplamak için konumunuza ihtiyacımız var.</string>
 </dict>

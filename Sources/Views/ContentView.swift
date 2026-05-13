@@ -3,7 +3,6 @@ import SwiftUI
 public struct ContentView: View {
 	@EnvironmentObject var viewModel: PrayerTimeViewModel
 	@State private var showSettings = false
-	@State private var pulseAnimation = false
 
 	public init() {}
 
@@ -33,8 +32,6 @@ public struct ContentView: View {
 					.frame(width: 300, height: 300)
 					.blur(radius: 50)
 					.offset(x: 150, y: 100)
-					.scaleEffect(pulseAnimation ? 1.1 : 1.0)
-					.animation(.easeInOut(duration: 3).repeatForever(autoreverses: true), value: pulseAnimation)
 			}
 			.ignoresSafeArea()
 
@@ -82,8 +79,9 @@ public struct ContentView: View {
 					.buttonStyle(.plain)
 					.rotationEffect(.degrees(showSettings ? 180 : 0))
 					.animation(.spring(response: 0.4, dampingFraction: 0.6), value: showSettings)
+					.accessibilityLabel(showSettings ? "Ayarları kapat" : "Ayarları aç")
 					
-					Button(action: { Task { await viewModel.refreshTimings() } }) {
+					Button(action: { Task { await viewModel.refreshTimings(userInitiated: true) } }) {
 						Image(systemName: "arrow.clockwise")
 							.font(.system(size: 20, weight: .semibold))
 							.foregroundColor(.white)
@@ -113,6 +111,7 @@ public struct ContentView: View {
 					.animation(.linear(duration: 1).repeatForever(autoreverses: false), value: viewModel.isLoading)
 					.disabled(viewModel.isLoading)
 					.scaleEffect(viewModel.isLoading ? 0.95 : 1.0)
+					.accessibilityLabel("Namaz vakitlerini yenile")
 				}
 				.padding(20)
 				
@@ -198,7 +197,7 @@ public struct ContentView: View {
 						// Geri sayım - Ultra prominent
 						VStack(spacing: 8) {
 							HStack(spacing: 12) {
-								ForEach(Array(viewModel.countdownText.split(separator: ":")), id: \.self) { segment in
+								ForEach(Array(viewModel.countdownText.split(separator: ":").enumerated()), id: \.offset) { _, segment in
 									Text(String(segment))
 										.font(.system(size: 56, weight: .bold, design: .rounded))
 										.foregroundColor(Color(red: 1.0, green: 0.85, blue: 0.5))
@@ -373,7 +372,7 @@ public struct ContentView: View {
 
 					Button(action: {
 						showSettings = false
-						Task { await viewModel.refreshTimings() }
+						Task { await viewModel.refreshTimings(userInitiated: true) }
 					}) {
 						Text("Kaydet ve Güncelle")
 							.font(.system(size: 16, weight: .semibold))
@@ -384,6 +383,7 @@ public struct ContentView: View {
 							.cornerRadius(12)
 					}
 					.buttonStyle(.plain)
+					.disabled(viewModel.isLoading)
 				}
 				.padding(24)
 				.frame(width: 400)
@@ -395,14 +395,15 @@ public struct ContentView: View {
 		.frame(minWidth: 550, minHeight: 750)
 		.onAppear {
 			viewModel.start()
-			withAnimation(.easeInOut(duration: 3).delay(0.5)) {
-				pulseAnimation = true
-			}
+		}
+		.onExitCommand {
+			if showSettings { showSettings = false }
 		}
 	}
 }
 
 #Preview {
 	ContentView()
+		.environmentObject(PrayerTimeViewModel())
 }
 

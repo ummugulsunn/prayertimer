@@ -1,0 +1,6 @@
+{
+  "description": "Prayer Timer, macOS menü çubuğunda günlük İslami namaz vakitlerini ve sıradaki vakte geri sayımı gösterir.\n\n• Günlük program (İmsak–Yatsı)\n• Sıradaki vakte geri sayım\n• Manuel şehir/ülke veya isteğe bağlı otomatik konum\n• Hesaplama yöntemi seçimi (Aladhan API; Türkiye Diyanet ile uyumlu yöntem dahil)\n• Yerel bildirim ve hatırlatmalar\n• İsteğe bağlı widget\n\nNamaz verilerini almak için internet gerekir. Konum yalnızca otomatik konumu açtığınızda kullanılır.\n\nKullanım Koşulları (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/",
+  "keywords": "namaz,vakit,islam,mac,menü çubuğu,geri sayım,türkiye,bildirim",
+  "promotionalText": "Namaz vakitlerini ve geri sayımı Mac menü çubuğundan takip edin.",
+  "supportUrl": "https://ummugulsunn.github.io/prayertimer"
+}

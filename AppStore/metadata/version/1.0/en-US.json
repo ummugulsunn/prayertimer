@@ -1,0 +1,6 @@
+{
+  "description": "Prayer Timer shows Islamic prayer times in your macOS menu bar with a live countdown to the next prayer.\n\n• Daily schedule (Fajr/Imsak through Isha)\n• Next-prayer countdown\n• Manual city/country or optional automatic location\n• Calculation method selection (via Aladhan API; Turkish Diyanet-aligned method available)\n• Optional local notifications and reminders\n• Optional widget sharing the same schedule\n\nInternet is required to fetch prayer times. Location is used only when you enable automatic location; it is not sent to our servers.\n\nTerms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/",
+  "keywords": "prayer,islam,mac,menu bar,countdown,turkey,namaz,vakit,notifications",
+  "promotionalText": "See daily prayer times and a precise countdown right from your Mac menu bar.",
+  "supportUrl": "https://ummugulsunn.github.io/prayertimer"
+}

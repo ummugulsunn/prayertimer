@@ -8,32 +8,52 @@ public final class PrayerTimeViewModel: ObservableObject {
 	@Published public private(set) var prayers: [PrayerTime] = []
 	@Published public private(set) var nextPrayer: PrayerTime?
 	@Published public private(set) var countdownText: String = "--:--:--"
+	/// Menü çubuğu metni; `TimelineView` olmadan güncellenir (CPU tasarrufu).
+	@Published public private(set) var menuBarCompactCountdown: String = "--"
+	@Published public private(set) var menuBarUrgentHighlight: Bool = false
+
 	@Published public var useAutoLocation: Bool = false {
-		didSet { saveSettings() }
+		didSet {
+			guard !suppressSettingSideEffects else { return }
+			invalidateGeocodeCache()
+			saveSettings()
+		}
 	}
 	@Published public var manualCity: String = "Istanbul" {
-		didSet { saveSettings() }
+		didSet {
+			guard !suppressSettingSideEffects else { return }
+			invalidateGeocodeCache()
+			scheduleDebouncedSaveSettings()
+		}
 	}
 	@Published public var manualCountry: String = "Turkey" {
-		didSet { saveSettings() }
+		didSet {
+			guard !suppressSettingSideEffects else { return }
+			invalidateGeocodeCache()
+			scheduleDebouncedSaveSettings()
+		}
 	}
 	@Published public var calculationMethod: CalculationMethod = .turkey {
-		didSet { saveSettings() }
+		didSet {
+			guard !suppressSettingSideEffects else { return }
+			saveSettings()
+		}
 	}
 	@Published public var use24HourFormat: Bool = true {
-		didSet { 
+		didSet {
+			guard !suppressSettingSideEffects else { return }
+			displayTimeFormatter.dateFormat = use24HourFormat ? "HH:mm" : "h:mm a"
 			saveSettings()
-			// Refresh display times when format changes
 			if !prayers.isEmpty {
 				updatePrayerTimeStrings()
 			}
 		}
 	}
 	@Published public var preAlertMinutes: Int? = 45 {
-		didSet { 
+		didSet {
+			guard !suppressSettingSideEffects else { return }
 			saveSettings()
 			showSuccessMessage("Ayarlar kaydedildi")
-			// Ayarlar değiştiğinde bildirimleri yeniden zamanla
 			if notificationsEnabled && !prayers.isEmpty {
 				Task {
 					await NotificationManager.shared.scheduleNotifications(for: rawPrayerTimes, preAlertMinutes: preAlertMinutes)
@@ -42,20 +62,18 @@ public final class PrayerTimeViewModel: ObservableObject {
 		}
 	}
 	@Published public var notificationsEnabled: Bool = true {
-		didSet { 
+		didSet {
+			guard !suppressSettingSideEffects else { return }
 			saveSettings()
 			showSuccessMessage(notificationsEnabled ? "Bildirimler etkinleştirildi" : "Bildirimler devre dışı bırakıldı")
-			// Bildirimler açıldığında/kapatıldığında bildirimleri güncelle
 			if notificationsEnabled && !prayers.isEmpty {
 				Task {
 					try? await NotificationManager.shared.requestAuthorization()
 					await NotificationManager.shared.scheduleNotifications(for: rawPrayerTimes, preAlertMinutes: preAlertMinutes)
 				}
 			} else if !notificationsEnabled {
-				// Bildirimler kapatıldığında tüm bildirimleri iptal et
 				Task {
-					let center = UNUserNotificationCenter.current()
-					center.removeAllPendingNotificationRequests()
+					UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
 				}
 			}
 		}
@@ -66,8 +84,29 @@ public final class PrayerTimeViewModel: ObservableObject {
 
 	private let service: PrayerTimeService
 	private let locationManager = LocationManager()
-	private var timer: Timer?
-	private var rawPrayerTimes: [PrayerTime] = [] // Store times with raw dates
+	private var rawPrayerTimes: [PrayerTime] = []
+
+	private var suppressSettingSideEffects = false
+	private var debouncedSaveTask: Task<Void, Never>?
+
+	private var countdownWorkItem: DispatchWorkItem?
+	private var didRunInitialStart = false
+
+	private let displayTimeFormatter: DateFormatter = {
+		let f = DateFormatter()
+		f.locale = Locale(identifier: "tr_TR_POSIX")
+		f.dateFormat = "HH:mm"
+		return f
+	}()
+
+	/// Aladhan `meta.timezone`; gösterim ve sonraki isteklerin takvim günü için kullanılır.
+	private var prayerLocationTimeZone: TimeZone = .current
+
+	private var cachedGeocodeKey: String?
+	private var cachedGeocodeCoordinate: CLLocationCoordinate2D?
+
+	private var lastWidgetTimingsData: Data?
+	private var lastWidgetTimeZoneId: String?
 
 	public init(service: PrayerTimeService = PrayerTimeService()) {
 		self.service = service
@@ -75,112 +114,139 @@ public final class PrayerTimeViewModel: ObservableObject {
 	}
 
 	deinit {
-		timer?.invalidate()
+		countdownWorkItem?.cancel()
+		debouncedSaveTask?.cancel()
 	}
 
 	public func start() {
-		// Bildirim izni iste (eğer bildirimler etkinse)
 		if notificationsEnabled {
 			Task {
 				try? await NotificationManager.shared.requestAuthorization()
 			}
 		}
-		Task { await refreshTimings() }
-		startTimer()
+		if didRunInitialStart {
+			scheduleCountdownLoop()
+			return
+		}
+		didRunInitialStart = true
+		Task {
+			await refreshTimings(userInitiated: false)
+		}
 	}
 
-	public func refreshTimings() async {
-		self.isLoading = true
-		self.errorMessage = nil
+	public func refreshTimings(userInitiated: Bool = false) async {
+		if isLoading && !userInitiated {
+			scheduleCountdownLoop()
+			return
+		}
+
+		countdownWorkItem?.cancel()
+		countdownWorkItem = nil
+
+		isLoading = true
+		errorMessage = nil
 		do {
 			let coordinate = try await resolveCoordinate()
-			
-			// Bugünün vakitlerini çek
-			let todayTimings = try await service.fetchTimings(params: .init(
+
+			let todayResult = try await service.fetchPrayerDay(params: .init(
 				date: Date(),
 				latitude: coordinate.latitude,
 				longitude: coordinate.longitude,
-				method: calculationMethod.rawValue
+				method: calculationMethod.rawValue,
+				civilDateTimeZone: prayerLocationTimeZone
 			))
-			
-			var allPrayers = buildPrayerTimes(from: todayTimings, on: Date())
-			
-			// Eğer bugünün tüm vakitleri geçmişse, yarının imsak saatini ekle
+			let tz = todayResult.timeZone
+			prayerLocationTimeZone = tz
+			displayTimeFormatter.timeZone = tz
+
+			let todayTimings = todayResult.timings
+			var allPrayers = TimingsCodec.buildPrayerTimes(from: todayTimings, on: Date(), timeZone: tz)
+
 			let now = Date()
 			let hasUpcomingPrayer = allPrayers.contains(where: { $0.date > now })
-			
+
 			if !hasUpcomingPrayer {
-				// Yarının vakitlerini çek
-				let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-				let tomorrowTimings = try await service.fetchTimings(params: .init(
+				var cal = Calendar(identifier: .gregorian) ?? Calendar.current
+				cal.timeZone = tz
+				let todayStart = cal.date(from: cal.dateComponents([.year, .month, .day], from: Date())) ?? Date()
+				let tomorrow = cal.date(byAdding: .day, value: 1, to: todayStart) ?? Date()
+				let tomorrowResult = try await service.fetchPrayerDay(params: .init(
 					date: tomorrow,
 					latitude: coordinate.latitude,
 					longitude: coordinate.longitude,
-					method: calculationMethod.rawValue
+					method: calculationMethod.rawValue,
+					civilDateTimeZone: tz
 				))
-				
-				// Sadece yarının İmsak saatini ekle
-				let tomorrowPrayers = buildPrayerTimes(from: tomorrowTimings, on: tomorrow)
+
+				let tomorrowPrayers = TimingsCodec.buildPrayerTimes(from: tomorrowResult.timings, on: tomorrow, timeZone: tomorrowResult.timeZone)
 				if let tomorrowFajr = tomorrowPrayers.first(where: { $0.name == "İmsak" }) {
 					allPrayers.append(tomorrowFajr)
 				}
 			}
-			
-			self.rawPrayerTimes = allPrayers
+
+			rawPrayerTimes = allPrayers
 			updatePrayerTimeStrings()
-			self.nextPrayer = computeNextPrayer(from: self.prayers)
-			saveToSharedDefaults(timings: todayTimings)
-			WidgetCenter.shared.reloadAllTimelines()
+			let computedNext = computeNextPrayer(from: prayers)
+			if computedNext != nextPrayer {
+				nextPrayer = computedNext
+			}
+			saveToSharedDefaultsIfChanged(timings: todayTimings, timeZone: tz)
 			if notificationsEnabled {
 				try? await NotificationManager.shared.requestAuthorization()
 				await NotificationManager.shared.scheduleNotifications(for: allPrayers, preAlertMinutes: preAlertMinutes)
 			}
-			self.isLoading = false
-			// Sadece manuel yenileme yapıldığında başarı mesajı göster
-			if !rawPrayerTimes.isEmpty {
+			isLoading = false
+			if userInitiated && !rawPrayerTimes.isEmpty {
 				showSuccessMessage("Vakitler güncellendi")
 			}
+			scheduleCountdownLoop()
 		} catch {
 			handleError(error)
-			self.isLoading = false
+			isLoading = false
+			scheduleCountdownLoop()
 		}
 	}
-	
+
 	private func handleError(_ error: Error) {
 		if let serviceError = error as? PrayerTimeService.ServiceError {
 			switch serviceError {
 			case .invalidURL:
-				self.errorMessage = "Invalid API URL. Please check your settings."
+				errorMessage = "API adresi geçersiz. Geliştirici ayarlarını kontrol edin."
 			case .network(let underlyingError):
 				if let urlError = underlyingError as? URLError {
 					switch urlError.code {
 					case .notConnectedToInternet, .networkConnectionLost:
-						self.errorMessage = "No internet connection. Please check your network and try again."
+						errorMessage = "İnternet bağlantısı yok. Ağı kontrol edip yeniden deneyin."
 					case .timedOut:
-						self.errorMessage = "Request timed out. The prayer time service may be unavailable."
+						errorMessage = "İstek zaman aşımına uğradı. Servis şu an meşgul olabilir."
 					default:
-						self.errorMessage = "Network error: \(urlError.localizedDescription)"
+						errorMessage = "Ağ hatası: \(urlError.localizedDescription)"
 					}
 				} else {
-					self.errorMessage = "Network error: \(underlyingError.localizedDescription)"
+					errorMessage = "Ağ hatası: \(underlyingError.localizedDescription)"
 				}
-			case .decoding(_):
-				self.errorMessage = "Failed to parse prayer times. The API response format may have changed."
+			case .decoding:
+				errorMessage = "Namaz verisi okunamadı. API yanıtı beklenenden farklı olabilir."
 			case .invalidResponse:
-				self.errorMessage = "Invalid response from prayer time service. Please try again later."
+				errorMessage = "Sunucudan geçersiz yanıt alındı. Daha sonra tekrar deneyin."
 			}
 		} else if let locationError = error as? LocationManager.LocationError {
 			switch locationError {
 			case .denied:
-				self.errorMessage = "Location access denied. Please enable location services in System Settings."
+				errorMessage = "Konum erişimi reddedildi. Sistem Ayarları’ndan konumu etkinleştirin."
 			case .restricted:
-				self.errorMessage = "Location access restricted. Please check your privacy settings."
+				errorMessage = "Konum kullanımı kısıtlı. Gizlilik ayarlarını kontrol edin."
 			case .unableToFindLocation:
-				self.errorMessage = "Unable to find location. Please check your city and country names."
+				errorMessage = "Konum bulunamadı. Şehir ve ülke adını gözden geçirin."
 			}
 		} else {
-			self.errorMessage = "Error: \(error.localizedDescription)"
+			errorMessage = "Hata: \(error.localizedDescription)"
 		}
+	}
+
+	private func invalidateGeocodeCache() {
+		cachedGeocodeKey = nil
+		cachedGeocodeCoordinate = nil
 	}
 
 	private func resolveCoordinate() async throws -> CLLocationCoordinate2D {
@@ -189,15 +255,21 @@ public final class PrayerTimeViewModel: ObservableObject {
 		} else {
 			let query = [manualCity, manualCountry].filter { !$0.isEmpty }.joined(separator: ", ")
 			if query.isEmpty { throw LocationManager.LocationError.unableToFindLocation }
-			return try await geocode(query: query)
+			if query == cachedGeocodeKey, let c = cachedGeocodeCoordinate {
+				return c
+			}
+			let coord = try await geocode(query: query)
+			cachedGeocodeKey = query
+			cachedGeocodeCoordinate = coord
+			return coord
 		}
 	}
 
 	private func geocode(query: String) async throws -> CLLocationCoordinate2D {
-		return try await withCheckedThrowingContinuation { continuation in
+		try await withCheckedThrowingContinuation { continuation in
 			let geocoder = CLGeocoder()
 			geocoder.geocodeAddressString(query) { placemarks, error in
-				if let error = error {
+				if let error {
 					continuation.resume(throwing: error)
 					return
 				}
@@ -210,40 +282,18 @@ public final class PrayerTimeViewModel: ObservableObject {
 		}
 	}
 
-	private func buildPrayerTimes(from timings: Timings, on date: Date) -> [PrayerTime] {
-		let pairs: [(String, String)] = [
-			("İmsak", timings.Fajr),
-			("Güneş", timings.Sunrise),
-			("Öğle", timings.Dhuhr),
-			("İkindi", timings.Asr),
-			("Akşam", timings.Maghrib),
-			("Yatsı", timings.Isha)
-		]
-		let calendar = Calendar.current
-		let dateFormatter = DateFormatter()
-		dateFormatter.locale = Locale(identifier: "tr_TR_POSIX")
-		dateFormatter.dateFormat = "HH:mm"
-		return pairs.compactMap { name, timeStr in
-			guard let time = dateFormatter.date(from: timeStr) else { return nil }
-			let comps = calendar.dateComponents([.year, .month, .day], from: date)
-			let dt = calendar.date(bySettingHour: calendar.component(.hour, from: time), minute: calendar.component(.minute, from: time), second: 0, of: calendar.date(from: comps) ?? date) ?? date
-			// Store with original time string - we'll format it based on user preference
-			return PrayerTime(id: name, name: name, timeString: timeStr, date: dt)
-		}.sorted(by: { $0.date < $1.date })
-	}
-	
 	private func updatePrayerTimeStrings() {
-		let formatter = DateFormatter()
-		formatter.locale = Locale(identifier: "tr_TR_POSIX")
-		formatter.dateFormat = use24HourFormat ? "HH:mm" : "h:mm a"
-		
-		self.prayers = rawPrayerTimes.map { prayer in
+		let formatter = displayTimeFormatter
+		let newPrayers = rawPrayerTimes.map { prayer in
 			PrayerTime(
 				id: prayer.id,
 				name: prayer.name,
 				timeString: formatter.string(from: prayer.date),
 				date: prayer.date
 			)
+		}
+		if newPrayers != prayers {
+			prayers = newPrayers
 		}
 	}
 
@@ -252,81 +302,128 @@ public final class PrayerTimeViewModel: ObservableObject {
 		return list.first(where: { $0.date > now })
 	}
 
-	private var lastUIUpdateTime: Date = Date()
-	
-	private func startTimer() {
-		timer?.invalidate()
-		lastUIUpdateTime = Date()
-		
-		// Timer runs every second, but UI updates adaptively for energy efficiency:
-		// - < 1 hour: update UI every second (accurate countdown)
-		// - < 6 hours: update UI every 10 seconds
-		// - >= 6 hours: update UI every 60 seconds
-		timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-			Task { @MainActor in
-				guard let self = self else {
-					timer.invalidate()
-					return
-				}
-				
-				// Recompute next prayer in case it changed
-				if let next = self.computeNextPrayer(from: self.prayers), next.id != self.nextPrayer?.id {
-					self.nextPrayer = next
-					self.lastUIUpdateTime = Date() // Reset update time when prayer changes
-				}
-				
-				guard let target = self.nextPrayer?.date else {
-					self.countdownText = "--:--:--"
-					return
-				}
-				
-				let remaining = max(0, Int(target.timeIntervalSinceNow))
-				
-				// If prayer time has passed, refresh timings
-				if remaining == 0 {
-					Task { await self.refreshTimings() }
-					return
-				}
-				
-				// Determine update interval based on remaining time
-				let hours = remaining / 3600
-				let updateInterval: TimeInterval
-				if hours < 1 {
-					updateInterval = 1.0 // Update every second when < 1 hour
-				} else if hours < 6 {
-					updateInterval = 10.0 // Update every 10 seconds when < 6 hours
-				} else {
-					updateInterval = 60.0 // Update every minute when >= 6 hours
-				}
-				
-				// Only update UI if enough time has passed (for energy efficiency)
-				let timeSinceLastUpdate = Date().timeIntervalSince(self.lastUIUpdateTime)
-				if timeSinceLastUpdate >= updateInterval {
-					let hours = remaining / 3600
-					let minutes = (remaining % 3600) / 60
-					let seconds = remaining % 60
-					self.countdownText = String(format: "%02d:%02d:%02d", hours, minutes, seconds)
-					self.lastUIUpdateTime = Date()
-				}
-			}
+	private func scheduleDebouncedSaveSettings() {
+		debouncedSaveTask?.cancel()
+		debouncedSaveTask = Task {
+			try? await Task.sleep(nanoseconds: 450_000_000)
+			guard !Task.isCancelled else { return }
+			saveSettings()
 		}
-		
-		// Add timer to RunLoop to ensure it works properly and survives app nap
-		RunLoop.main.add(timer!, forMode: .common)
-		RunLoop.main.add(timer!, forMode: .eventTracking)
 	}
 
-	private func saveToSharedDefaults(timings: Timings) {
-		let encoder = JSONEncoder()
-		if let data = try? encoder.encode(timings) {
-			SharedDefaults.defaults?.set(data, forKey: SharedDefaults.Keys.latestTimingsJSON)
-			SharedDefaults.defaults?.set(Date(), forKey: SharedDefaults.Keys.latestFetchDate)
+	/// Kademeli gecikme: <1 saat 1 sn, 1–6 saat 10 sn, üzeri 60 sn (işlemci uyandırma sıklığını düşürür).
+	private func scheduleCountdownLoop() {
+		countdownWorkItem?.cancel()
+		let item = DispatchWorkItem { [weak self] in
+			self?.countdownTickAndReschedule()
+		}
+		countdownWorkItem = item
+		DispatchQueue.main.async(execute: item)
+	}
+
+	private func countdownTickAndReschedule() {
+		if let next = computeNextPrayer(from: prayers), next.id != nextPrayer?.id {
+			nextPrayer = next
+		}
+
+		guard let target = nextPrayer?.date else {
+			setCountdownDisplay(h: 0, m: 0, s: 0, showPlaceholder: true)
+			scheduleNextCountdown(after: prayers.isEmpty ? 8 : 30)
+			return
+		}
+
+		let remaining = max(0, Int(target.timeIntervalSinceNow))
+
+		if remaining == 0 {
+			if !isLoading {
+				Task { await refreshTimings(userInitiated: false) }
+			}
+			scheduleNextCountdown(after: 2)
+			return
+		}
+
+		let h = remaining / 3600
+		let m = (remaining % 3600) / 60
+		let s = remaining % 60
+		setCountdownDisplay(h: h, m: m, s: s, showPlaceholder: false)
+		updateMenuBarDisplay(remaining: remaining)
+
+		let delay: TimeInterval
+		if remaining < 3600 {
+			delay = 1
+		} else if remaining < 21600 {
+			delay = 10
+		} else {
+			delay = 60
+		}
+
+		scheduleNextCountdown(after: delay)
+	}
+
+	private func scheduleNextCountdown(after delay: TimeInterval) {
+		countdownWorkItem?.cancel()
+		let nextItem = DispatchWorkItem { [weak self] in
+			self?.countdownTickAndReschedule()
+		}
+		countdownWorkItem = nextItem
+		DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: nextItem)
+	}
+
+	private func setCountdownDisplay(h: Int, m: Int, s: Int, showPlaceholder: Bool) {
+		let newText: String
+		if showPlaceholder {
+			newText = "--:--:--"
+			if menuBarCompactCountdown != "--" {
+				menuBarCompactCountdown = "--"
+			}
+			if menuBarUrgentHighlight {
+				menuBarUrgentHighlight = false
+			}
+		} else {
+			newText = String(format: "%02d:%02d:%02d", h, m, s)
+		}
+		if newText != countdownText {
+			countdownText = newText
 		}
 	}
-	
+
+	private func updateMenuBarDisplay(remaining: Int) {
+		let hours = remaining / 3600
+		let minutes = (remaining % 3600) / 60
+		let urgent = hours == 0 && minutes > 0 && minutes < 15
+		let newCompact: String
+		if hours > 0 {
+			newCompact = "\(hours)s \(minutes)dk"
+		} else {
+			newCompact = "\(minutes)dk"
+		}
+		if newCompact != menuBarCompactCountdown {
+			menuBarCompactCountdown = newCompact
+		}
+		if urgent != menuBarUrgentHighlight {
+			menuBarUrgentHighlight = urgent
+		}
+	}
+
+	private func saveToSharedDefaultsIfChanged(timings: Timings, timeZone: TimeZone) {
+		let encoder = JSONEncoder()
+		guard let data = try? encoder.encode(timings) else { return }
+		let tzId = timeZone.identifier
+		if data == lastWidgetTimingsData, tzId == lastWidgetTimeZoneId { return }
+		lastWidgetTimingsData = data
+		lastWidgetTimeZoneId = tzId
+		SharedDefaults.defaults?.set(data, forKey: SharedDefaults.Keys.latestTimingsJSON)
+		SharedDefaults.defaults?.set(tzId, forKey: SharedDefaults.Keys.latestPrayerTimeZoneID)
+		SharedDefaults.defaults?.set(Date(), forKey: SharedDefaults.Keys.latestFetchDate)
+		WidgetCenter.shared.reloadAllTimelines()
+	}
+
 	private func loadSettings() {
+		suppressSettingSideEffects = true
+		defer { suppressSettingSideEffects = false }
+
 		guard let defaults = SharedDefaults.defaults else { return }
-		
+
 		useAutoLocation = defaults.bool(forKey: SharedDefaults.Keys.useAutoLocation)
 		if let city = defaults.string(forKey: SharedDefaults.Keys.manualCity), !city.isEmpty {
 			manualCity = city
@@ -338,22 +435,27 @@ public final class PrayerTimeViewModel: ObservableObject {
 		   let method = CalculationMethod(rawValue: methodRaw) {
 			calculationMethod = method
 		} else {
-			// İlk kurulumda varsayılan olarak Türkiye Diyanet yöntemini kullan
 			calculationMethod = .turkey
 		}
 		use24HourFormat = defaults.object(forKey: SharedDefaults.Keys.use24HourFormat) as? Bool ?? true
+		displayTimeFormatter.dateFormat = use24HourFormat ? "HH:mm" : "h:mm a"
+		if let tzId = defaults.string(forKey: SharedDefaults.Keys.latestPrayerTimeZoneID),
+		   let tz = TimeZone(identifier: tzId) {
+			prayerLocationTimeZone = tz
+			displayTimeFormatter.timeZone = tz
+			lastWidgetTimeZoneId = tzId
+		}
 		notificationsEnabled = defaults.object(forKey: SharedDefaults.Keys.notificationsEnabled) as? Bool ?? true
 		if let preAlert = defaults.object(forKey: SharedDefaults.Keys.preAlertMinutes) as? Int {
 			preAlertMinutes = preAlert
 		} else {
-			// İlk kurulumda varsayılan 45 dakika
 			preAlertMinutes = 45
 		}
 	}
-	
+
 	private func saveSettings() {
 		guard let defaults = SharedDefaults.defaults else { return }
-		
+
 		defaults.set(useAutoLocation, forKey: SharedDefaults.Keys.useAutoLocation)
 		defaults.set(manualCity, forKey: SharedDefaults.Keys.manualCity)
 		defaults.set(manualCountry, forKey: SharedDefaults.Keys.manualCountry)
@@ -366,11 +468,10 @@ public final class PrayerTimeViewModel: ObservableObject {
 			defaults.removeObject(forKey: SharedDefaults.Keys.preAlertMinutes)
 		}
 	}
-	
+
 	private func showSuccessMessage(_ message: String) {
 		successMessage = message
 		errorMessage = nil
-		// 2 saniye sonra mesajı temizle
 		Task {
 			try? await Task.sleep(nanoseconds: 2_000_000_000)
 			await MainActor.run {
@@ -381,4 +482,3 @@ public final class PrayerTimeViewModel: ObservableObject {
 		}
 	}
 }
-

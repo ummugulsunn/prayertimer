@@ -8,6 +8,17 @@ public final class PrayerTimeService {
 		case invalidResponse
 	}
 
+	private static let session: URLSession = {
+		let config = URLSessionConfiguration.ephemeral
+		config.urlCache = nil
+		config.requestCachePolicy = .reloadIgnoringLocalCacheData
+		config.httpMaximumConnectionsPerHost = 1
+		config.timeoutIntervalForRequest = 20
+		config.timeoutIntervalForResource = 30
+		config.waitsForConnectivity = false
+		return URLSession(configuration: config)
+	}()
+
 	public init() {}
 
 	public struct FetchParams {
@@ -15,19 +26,32 @@ public final class PrayerTimeService {
 		public let latitude: Double
 		public let longitude: Double
 		public let method: Int?
-		public init(date: Date = Date(), latitude: Double, longitude: Double, method: Int? = nil) {
+		/// API `date=DD-MM-YYYY` için hangi takvim günü kullanılacak (konum saat dilimi önerilir).
+		public let civilDateTimeZone: TimeZone
+
+		public init(
+			date: Date = Date(),
+			latitude: Double,
+			longitude: Double,
+			method: Int? = nil,
+			civilDateTimeZone: TimeZone = .current
+		) {
 			self.date = date
 			self.latitude = latitude
 			self.longitude = longitude
 			self.method = method
+			self.civilDateTimeZone = civilDateTimeZone
 		}
 	}
 
-	public func fetchTimings(params: FetchParams) async throws -> Timings {
+	public func fetchPrayerDay(params: FetchParams) async throws -> FetchedPrayerDay {
 		var components = URLComponents(string: "https://api.aladhan.com/v1/timings")
-		let dateFormatter = DateFormatter()
-		dateFormatter.dateFormat = "dd-MM-yyyy"
-		let dateString = dateFormatter.string(from: params.date)
+		var cal = Calendar(identifier: .gregorian) ?? Calendar.current
+		cal.timeZone = params.civilDateTimeZone
+		let day = cal.component(.day, from: params.date)
+		let month = cal.component(.month, from: params.date)
+		let year = cal.component(.year, from: params.date)
+		let dateString = String(format: "%02d-%02d-%04d", day, month, year)
 		components?.queryItems = [
 			URLQueryItem(name: "date", value: dateString),
 			URLQueryItem(name: "latitude", value: String(params.latitude)),
@@ -43,13 +67,12 @@ public final class PrayerTimeService {
 		request.timeoutInterval = 20
 
 		do {
-			let (data, response) = try await URLSession.shared.data(for: request)
+			let (data, response) = try await Self.session.data(for: request)
 			guard let http = response as? HTTPURLResponse else {
 				throw ServiceError.invalidResponse
 			}
-			
+
 			guard (200..<300).contains(http.statusCode) else {
-				// Provide more context for HTTP errors
 				let statusCode = http.statusCode
 				if statusCode == 400 {
 					throw ServiceError.invalidResponse
@@ -61,19 +84,23 @@ public final class PrayerTimeService {
 					throw ServiceError.invalidResponse
 				}
 			}
-			
+
 			let decoder = JSONDecoder()
 			let api = try decoder.decode(APIResponse.self, from: data)
-			return api.data.timings
+			let tz: TimeZone
+			if let id = api.data.meta?.timezone,
+			   let resolved = TimeZone(identifier: id) {
+				tz = resolved
+			} else {
+				tz = params.civilDateTimeZone
+			}
+			return FetchedPrayerDay(timings: api.data.timings, timeZone: tz)
 		} catch let error as DecodingError {
 			throw ServiceError.decoding(error)
 		} catch let error as ServiceError {
-			// Re-throw service errors as-is
 			throw error
 		} catch {
 			throw ServiceError.network(error)
 		}
 	}
 }
-
-

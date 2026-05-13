@@ -18,6 +18,11 @@ public final class LocationManager: NSObject, CLLocationManagerDelegate {
 		case unableToFindLocation
 	}
 
+	private static func hasLocationAccess(_ status: CLAuthorizationStatus) -> Bool {
+		// macOS yalnızca "always" (veya eski SDK eşlemesi) kullanır; iOS'taki whenInUse burada tanımlı değildir.
+		status == .authorizedAlways
+	}
+
 	public func requestOneShotLocation() async throws -> CLLocationCoordinate2D {
 		// Önce izin durumunu kontrol et ve gerekirse izin iste
 		let status = await MainActor.run { manager.authorizationStatus }
@@ -51,19 +56,18 @@ public final class LocationManager: NSObject, CLLocationManagerDelegate {
 			}
 		}
 		
-		// İzin durumunu tekrar kontrol et
 		let finalStatus = await MainActor.run { manager.authorizationStatus }
 		switch finalStatus {
 		case .denied:
 			throw LocationError.denied
 		case .restricted:
 			throw LocationError.restricted
-		case .authorizedAlways:
-			break
 		case .notDetermined:
 			throw LocationError.denied
-		@unknown default:
-			throw LocationError.unableToFindLocation
+		default:
+			guard Self.hasLocationAccess(finalStatus) else {
+				throw LocationError.unableToFindLocation
+			}
 		}
 
 		// Konum servislerinin aktif olduğundan emin ol
@@ -101,17 +105,14 @@ public final class LocationManager: NSObject, CLLocationManagerDelegate {
 	
 	public func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
 		let status = manager.authorizationStatus
-		if status != .notDetermined {
-			// İzin durumu belirlendi, continuation'ı resume et
-			if let authContinuation = authorizationContinuation {
-				if status == .authorizedAlways {
-					authContinuation.resume()
-				} else {
-					authContinuation.resume(throwing: LocationError.denied)
-				}
-				authorizationContinuation = nil
-			}
+		guard status != .notDetermined, let authContinuation = authorizationContinuation else { return }
+
+		if Self.hasLocationAccess(status) {
+			authContinuation.resume()
+		} else {
+			authContinuation.resume(throwing: LocationError.denied)
 		}
+		authorizationContinuation = nil
 	}
 
 	public func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {

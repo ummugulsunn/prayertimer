@@ -12,13 +12,13 @@ struct Provider: TimelineProvider {
 	}
 
 	func getSnapshot(in context: Context, completion: @escaping (PrayerEntry) -> Void) {
-		let entry = PrayerEntry(date: Date(), prayers: TimingsCodec.decodeFromShared().map { TimingsCodec.buildPrayerTimes(from: $0, on: Date()) } ?? [])
+		let entry = PrayerEntry(date: Date(), prayers: TimingsCodec.decodeFromShared().map { TimingsCodec.buildPrayerTimes(from: $0, on: Date(), timeZone: TimingsCodec.timeZoneFromShared()) } ?? [])
 		completion(entry)
 	}
 
 	func getTimeline(in context: Context, completion: @escaping (Timeline<PrayerEntry>) -> Void) {
 		let now = Date()
-		let prayers = TimingsCodec.decodeFromShared().map { TimingsCodec.buildPrayerTimes(from: $0, on: now) } ?? []
+		let prayers = TimingsCodec.decodeFromShared().map { TimingsCodec.buildPrayerTimes(from: $0, on: now, timeZone: TimingsCodec.timeZoneFromShared()) } ?? []
 		let next = prayers.first(where: { $0.date > now })
 		let refreshDate = next?.date.addingTimeInterval(5) ?? Calendar.current.date(byAdding: .minute, value: 30, to: now)!
 		let entry = PrayerEntry(date: now, prayers: prayers)

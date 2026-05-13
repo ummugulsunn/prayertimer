@@ -20,11 +20,12 @@ public struct MenuBarView: View {
 						.foregroundColor(.secondary)
 				}
 				Spacer()
-				Button(action: { Task { await viewModel.refreshTimings() } }) {
+				Button(action: { Task { await viewModel.refreshTimings(userInitiated: true) } }) {
 					Image(systemName: "arrow.clockwise")
 						.font(.system(size: 12))
 				}
 				.buttonStyle(.borderless)
+				.disabled(viewModel.isLoading)
 			}
 			.padding(.horizontal, 12)
 			.padding(.vertical, 8)

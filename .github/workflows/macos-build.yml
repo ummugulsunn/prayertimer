@@ -1,0 +1,39 @@
+name: macOS build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Build Release (unsigned)
+        run: |
+          set -euo pipefail
+          DERIVED="$RUNNER_TEMP/DerivedData"
+          xcodebuild -scheme PrayerTimer \
+            -configuration Release \
+            -destination "platform=macOS" \
+            -derivedDataPath "$DERIVED" \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          ditto -c -k --sequesterRsrc --keepParent \
+            "$DERIVED/Build/Products/Release/PrayerTimer.app" \
+            PrayerTimer-macOS.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrayerTimer-macOS
+          path: PrayerTimer-macOS.zip

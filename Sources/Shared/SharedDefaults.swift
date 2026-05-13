@@ -9,6 +9,8 @@ public enum SharedDefaults {
 
 	public enum Keys {
 		public static let latestTimingsJSON = "latestTimingsJSON"
+		/// Aladhan `meta.timezone` (IANA), widget ve tarih birleştirme ile uyumlu.
+		public static let latestPrayerTimeZoneID = "latestPrayerTimeZoneID"
 		public static let latestFetchDate = "latestFetchDate"
 		public static let useAutoLocation = "useAutoLocation"
 		public static let manualCity = "manualCity"

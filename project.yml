@@ -16,6 +16,8 @@ targets:
     platform: macOS
     sources:
       - Sources
+    resources:
+      - Sources/Assets.xcassets
     settings:
       CODE_SIGN_ENTITLEMENTS: PrayerTimerApp.entitlements
     info:
@@ -23,7 +25,9 @@ targets:
       properties:
         CFBundleName: PrayerTimer
         CFBundleDisplayName: Prayer Timer
-        LSMinimumSystemVersion: "12.0"
+        LSMinimumSystemVersion: "13.0"
+        ITSAppUsesNonExemptEncryption: false
+        LSApplicationCategoryType: public.app-category.lifestyle
         NSLocationWhenInUseUsageDescription: "Namaz vakitlerini hesaplamak için konumunuza ihtiyacımız var."
     dependencies:
       - target: PrayerTimerWidget

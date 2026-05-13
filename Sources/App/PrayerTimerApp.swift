@@ -1,39 +1,25 @@
 import SwiftUI
 import AppKit
 
-// AppDelegate - Uygulamanın sürekli çalışmasını sağlar
-class AppDelegate: NSObject, NSApplicationDelegate {
-	private var activity: NSObjectProtocol?
+// AppDelegate - Menü çubuğu uygulaması; yanlışlıkla Cmd+Q ile çıkışı zorlaştırır, istenen çıkışa izin verir.
+final class AppDelegate: NSObject, NSApplicationDelegate {
+	/// `true` olduğunda `NSApplication.terminate` sonlandırmayı tamamlar (menü veya onaylı çıkış).
+	static var userRequestedTermination = false
 	
 	func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-		// Ana pencere kapansa bile uygulama kapanmasın
 		return false
 	}
 	
 	func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-		// CMD+Q ile kapatmayı engelle - uygulama sürekli çalışsın
-		// Sadece Activity Monitor'dan kapatılabilir
+		if Self.userRequestedTermination {
+			return .terminateNow
+		}
 		return .terminateCancel
 	}
 	
 	func applicationDidFinishLaunching(_ notification: Notification) {
-		// Ana pencereyi gizle (sadece menu bar app olarak çalışsın)
 		NSApp.setActivationPolicy(.accessory)
-		
-		// App Nap'i engelle - uygulama sürekli aktif kalsın
-		ProcessInfo.processInfo.disableAutomaticTermination("Prayer timer must stay active")
-		
-		// Background activity assertion - uygulamanın kapanmasını engelle
-		activity = ProcessInfo.processInfo.beginActivity(
-			options: [.userInitiated, .idleSystemSleepDisabled, .automaticTerminationDisabled],
-			reason: "Prayer timer must run continuously to show prayer times and send notifications"
-		)
-	}
-	
-	deinit {
-		if let activity = activity {
-			ProcessInfo.processInfo.endActivity(activity)
-		}
+		// Ek ProcessInfo aktivitesi yok: bildirimler sistem tarafından tetiklenir; CPU/enerji maliyetini düşürür.
 	}
 }
 
@@ -42,6 +28,7 @@ struct MenuBarContentView: View {
 	@ObservedObject var viewModel: PrayerTimeViewModel
 	@State private var hasStarted = false
 	@State private var showSettings = false
+	@State private var confirmQuit = false
 	
 	var body: some View {
 		VStack(spacing: 0) {
@@ -75,11 +62,14 @@ struct MenuBarContentView: View {
 						.font(.system(size: 12))
 				}
 				.buttonStyle(.borderless)
-				Button(action: { Task { await viewModel.refreshTimings() } }) {
+				.accessibilityLabel(showSettings ? "Ayarları kapat" : "Ayarları aç")
+				Button(action: { Task { await viewModel.refreshTimings(userInitiated: true) } }) {
 					Image(systemName: "arrow.clockwise")
 						.font(.system(size: 12))
 				}
 				.buttonStyle(.borderless)
+				.disabled(viewModel.isLoading)
+				.accessibilityLabel("Vakitleri yenile")
 			}
 			.padding(12)
 			
@@ -94,21 +84,44 @@ struct MenuBarContentView: View {
 			
 			Divider()
 			
-			// Bilgi metni
-			HStack {
+			HStack(alignment: .center, spacing: 8) {
 				Image(systemName: "info.circle")
 					.font(.system(size: 10))
 					.foregroundColor(.secondary)
-				Text("Uygulama sürekli çalışır. Kapatmak için Activity Monitor kullanın.")
+				Text("Arka planda çalışır. Cmd+Q ile çıkış engellenir; aşağıdan veya ⇧⌘Q ile çıkabilirsiniz.")
 					.font(.system(size: 9))
 					.foregroundColor(.secondary)
+					.fixedSize(horizontal: false, vertical: true)
+				Spacer(minLength: 0)
+				Button("Çıkış…") {
+					confirmQuit = true
+				}
+				.font(.system(size: 9))
+				.buttonStyle(.borderless)
+				.foregroundColor(.secondary)
+				.accessibilityLabel("Uygulamadan güvenli çıkış")
 			}
 			.padding(.horizontal, 12)
 			.padding(.vertical, 8)
 		}
-		.frame(width: 280)
+		.frame(width: 300)
+		.confirmationDialog(
+			"Prayer Timer kapatılsın mı?",
+			isPresented: $confirmQuit,
+			titleVisibility: .visible
+		) {
+			Button("Kapat", role: .destructive) {
+				AppDelegate.userRequestedTermination = true
+				NSApplication.shared.terminate(nil)
+			}
+			Button("İptal", role: .cancel) { }
+		} message: {
+			Text("Menü çubuğundaki geri sayım ve zamanlanmış bildirimler durur.")
+		}
+		.onExitCommand {
+			if showSettings { showSettings = false }
+		}
 		.onAppear {
-			// Sadece bir kere başlat
 			if !hasStarted {
 				hasStarted = true
 				viewModel.start()
@@ -231,9 +244,23 @@ struct MenuBarContentView: View {
 					.cornerRadius(6)
 				}
 				
+				if let success = viewModel.successMessage {
+					HStack {
+						Image(systemName: "checkmark.circle.fill")
+							.foregroundColor(.green)
+						Text(success)
+							.font(.system(size: 10))
+							.foregroundColor(.secondary)
+					}
+					.padding(8)
+					.frame(maxWidth: .infinity, alignment: .leading)
+					.background(Color.green.opacity(0.12))
+					.cornerRadius(6)
+				}
+				
 				Button(action: {
 					Task {
-						await viewModel.refreshTimings()
+						await viewModel.refreshTimings(userInitiated: true)
 						showSettings = false
 					}
 				}) {
@@ -245,6 +272,7 @@ struct MenuBarContentView: View {
 				}
 				.buttonStyle(.borderedProminent)
 				.controlSize(.small)
+				.disabled(viewModel.isLoading)
 			}
 			.padding(12)
 		}
@@ -295,6 +323,21 @@ struct MenuBarContentView: View {
 				.padding(.vertical, 8)
 				.background(Color.orange.opacity(0.1))
 			}
+
+			if let success = viewModel.successMessage, !viewModel.isLoading {
+				HStack(spacing: 6) {
+					Image(systemName: "checkmark.circle.fill")
+						.foregroundColor(.green)
+						.font(.system(size: 12))
+					Text(success)
+						.font(.system(size: 10))
+						.foregroundColor(.secondary)
+					Spacer()
+				}
+				.padding(.horizontal, 12)
+				.padding(.vertical, 8)
+				.background(Color.green.opacity(0.12))
+			}
 			
 			// Vakitler listesi veya loading
 			if viewModel.isLoading {
@@ -316,7 +359,7 @@ struct MenuBarContentView: View {
 						.foregroundColor(.secondary)
 						.multilineTextAlignment(.center)
 					Button("Yenile") {
-						Task { await viewModel.refreshTimings() }
+						Task { await viewModel.refreshTimings(userInitiated: true) }
 					}
 					.buttonStyle(.borderedProminent)
 					.controlSize(.small)
@@ -356,53 +399,59 @@ struct PrayerTimerApp: App {
 	@NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 	@StateObject private var viewModel = PrayerTimeViewModel()
 	
-	init() {
-		// Uygulama başladığında menu bar'ı göster
-		// Ana pencere hiç açılmasın
-		
-		// CMD+Q kısayolunu tamamen devre dışı bırak
-		DispatchQueue.main.async {
-			NSApp.mainMenu?.items.forEach { menuItem in
-				if menuItem.title == "Prayer Timer" || menuItem.title == "PrayerTimer" {
-					menuItem.submenu?.items.removeAll(where: { $0.action == #selector(NSApplication.terminate(_:)) })
-				}
-			}
-		}
-	}
-	
 	var body: some Scene {
-		// MenuBar - Sürekli üstte
 		MenuBarExtra {
 			MenuBarContentView(viewModel: viewModel)
 		} label: {
-			HStack(spacing: 3) {
-				Image(systemName: "moon.stars.fill")
-					.font(.system(size: 12))
-				if let next = viewModel.nextPrayer {
-					// Kalan süreyi göster
-					let remaining = max(0, Int(next.date.timeIntervalSinceNow))
-					let hours = remaining / 3600
-					let minutes = (remaining % 3600) / 60
-					
-					if hours > 0 {
-						Text("\(hours)s \(minutes)dk")
-							.font(.system(size: 11, weight: .medium))
-					} else {
-						Text("\(minutes)dk")
-							.font(.system(size: 11, weight: .medium))
-							.foregroundColor(minutes < 15 ? .orange : .primary)
-					}
-				} else {
-					Text("--")
-						.font(.system(size: 11))
-				}
-			}
+			MenuBarExtraLabel(viewModel: viewModel)
 		}
 		.menuBarExtraStyle(.window)
 		.commands {
-			// Quit komutunu kaldır
-			CommandGroup(replacing: .appTermination) { }
+			CommandGroup(replacing: .appTermination) {
+				Button("Prayer Timer'dan Çıkış") {
+					AppDelegate.userRequestedTermination = true
+					NSApplication.shared.terminate(nil)
+				}
+				.keyboardShortcut("q", modifiers: [.command, .shift])
+			}
 		}
+	}
+}
+
+/// Menü çubuğu: ViewModel’den beslenir; saniyelik `TimelineView` yok (gereksiz yeniden çizim yok).
+private struct MenuBarExtraLabel: View {
+	@ObservedObject var viewModel: PrayerTimeViewModel
+
+	var body: some View {
+		HStack(spacing: 4) {
+			Image(systemName: "moon.stars.fill")
+				.font(.system(size: 13, weight: .semibold))
+				.symbolRenderingMode(.monochrome)
+				.foregroundStyle(.primary)
+				.imageScale(.medium)
+				.layoutPriority(1)
+			Text(viewModel.menuBarCompactCountdown)
+				.font(.system(size: 11, weight: .medium))
+				.monospacedDigit()
+				.foregroundStyle(viewModel.menuBarUrgentHighlight ? .orange : .primary)
+		}
+		.fixedSize(horizontal: true, vertical: false)
+		.accessibilityElement(children: .combine)
+		.accessibilityLabel(accessibilitySummary)
+	}
+
+	private var accessibilitySummary: String {
+		let date = Date()
+		guard let next = viewModel.nextPrayer else {
+			return "Namaz vakitleri, veri yok"
+		}
+		let remaining = max(0, Int(next.date.timeIntervalSince(date)))
+		let hours = remaining / 3600
+		let minutes = (remaining % 3600) / 60
+		if hours > 0 {
+			return "Sıradaki \(next.name), kalan süre \(hours) saat \(minutes) dakika"
+		}
+		return "Sıradaki \(next.name), kalan süre \(minutes) dakika"
 	}
 }
 
