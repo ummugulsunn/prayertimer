@@ -12,10 +12,17 @@ jobs:
     runs-on: macos-14
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      # project.yml is tracked; *.xcodeproj is gitignored — generate before xcodebuild
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
 
       - name: Build Release (unsigned)
         run: |
@@ -33,7 +40,7 @@ jobs:
             PrayerTimer-macOS.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: PrayerTimer-macOS
           path: PrayerTimer-macOS.zip
