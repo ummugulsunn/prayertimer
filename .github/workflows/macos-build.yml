@@ -24,6 +24,11 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      # XcodeGen on a new Xcode toolchain may emit objectVersion 77 (Xcode 16+). GitHub
+      # macos-14 images still ship Xcode 15.4, which refuses to open that format (exit 74).
+      - name: Align project file format with Xcode 15 (CI)
+        run: perl -pi -e 's/objectVersion = 77;/objectVersion = 60;/' PrayerTimer.xcodeproj/project.pbxproj
+
       - name: Build Release (unsigned)
         run: |
           set -euo pipefail

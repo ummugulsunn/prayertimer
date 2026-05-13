@@ -1,6 +1,8 @@
 name: PrayerTimer
 options:
   bundleIdPrefix: com.ummugulsun
+  # CI uses Xcode 15.x; default xcode16_0 format is unreadable there (objectVersion 77).
+  projectFormat: xcode15_0
   deploymentTarget:
     macOS: "13.0"
 settings:
