@@ -1,288 +1,237 @@
-# 🕌 PrayerTimer - macOS Menu Bar Prayer Times App
+# PrayerTimer
 
-A minimal, persistent macOS menu bar application that displays Islamic prayer times with a live countdown timer. Built specifically for personal use with SwiftUI and modern macOS APIs.
+**PrayerTimer** is a native **macOS menu bar** application that shows Islamic prayer times and a live countdown to the next prayer. It is built with **SwiftUI**, uses the **Aladhan** prayer-times API, and supports manual or automatic location, calculation methods, local notifications, and an optional **widget** extension.
 
-![macOS](https://img.shields.io/badge/macOS-13.0+-blue.svg)
-![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)
-![License](https://img.shields.io/badge/License-MIT-green.svg)
-[![Build](https://github.com/ummugulsunn/prayertimer/actions/workflows/macos-build.yml/badge.svg)](https://github.com/ummugulsunn/prayertimer/actions/workflows/macos-build.yml)
-
-## ✨ Features
-
-### 🔔 **Always-On Menu Bar Display**
-- Persistent menu bar icon with live countdown (e.g., "2h 45m" or "45m")
-- Never closes - runs continuously in the background
-- No dock icon - purely menu bar focused
-- Auto-updates on adaptive intervals (per-second when under one hour; less frequent when more time remains)
-- Orange highlight when less than 15 minutes remain
-
-### ⏰ **Prayer Times Management**
-- Displays all 6 daily prayer times (Fajr, Sunrise, Dhuhr, Asr, Maghrib, Isha)
-- Highlights the next upcoming prayer
-- Live countdown timer in both menu bar and dropdown
-- Automatic daily updates
-
-### 🌍 **Flexible Location Settings**
-- **Manual Location**: Enter city and country manually (default: Istanbul, Turkey)
-- **Automatic Location**: Toggle GPS-based location (optional)
-- Easy-to-access settings panel with gear icon
-
-### 🎨 **Modern UI/UX**
-- Clean, native macOS design using SwiftUI
-- Dark mode support
-- Smooth animations and transitions
-- Minimal and distraction-free
-
-### 🔐 **Privacy & Security**
-- No analytics or tracking
-- Location data never leaves your device
-- Open source - verify the code yourself
-
-## 📸 Screenshots
-
-### Menu Bar
-The app lives in your menu bar with a live countdown timer:
-
-![Menu Bar](screenshots/menubar.png)
-*Live countdown timer showing time remaining until next prayer*
+[![macOS](https://img.shields.io/badge/macOS-13.0+-0A84FF?style=flat-square)](https://www.apple.com/macos/)
+[![Swift](https://img.shields.io/badge/Swift-5.9-F05138?style=flat-square)](https://swift.org/)
+[![License](https://img.shields.io/badge/License-MIT-22C55E?style=flat-square)](LICENSE)
+[![Build](https://img.shields.io/github/actions/workflow/status/ummugulsunn/prayertimer/macos-build.yml?branch=main&style=flat-square&label=CI)](https://github.com/ummugulsunn/prayertimer/actions/workflows/macos-build.yml)
 
 ---
 
-### Full App View
-Clean, modern interface with all prayer times and settings:
+## Table of contents
 
-![App View](screenshots/app-view.png)
-*Dropdown view showing next prayer, countdown, full schedule, and settings panel*
+1. [Features](#features)
+2. [Screenshots](#screenshots)
+3. [Requirements](#requirements)
+4. [Installation](#installation)
+5. [Configuration](#configuration)
+6. [Project layout](#project-layout)
+7. [Architecture](#architecture)
+8. [Customization](#customization)
+9. [Troubleshooting](#troubleshooting)
+10. [API reference](#api-reference)
+11. [Distribution and App Store](#distribution-and-app-store)
+12. [Contributing](#contributing)
+13. [License](#license)
+14. [Acknowledgments](#acknowledgments)
 
-**Features shown:**
-- 🕐 Live countdown in header
-- 🌙 Next prayer highlighted in orange
-- 📋 Complete daily prayer schedule
-- ⚙️ Settings panel with manual location input
-- 🔄 One-click refresh button
+---
 
-## 🚀 Installation
+## Features
 
-### Requirements
-- macOS 13.0 (Ventura) or later
-- Xcode 15.0 or later
-- Apple Developer account (for code signing)
+| Area | Description |
+|------|-------------|
+| **Menu bar** | Persistent icon with compact countdown (hours/minutes or minutes). Adaptive refresh: finer updates when the next prayer is soon; coarser when far away. Orange emphasis within about 15 minutes of the next prayer. |
+| **Schedule** | Six daily times (Fajr through Isha; UI labels follow Turkish naming). Next prayer is highlighted. |
+| **Popover** | Full list, large countdown, refresh, settings, and status messages. |
+| **Location** | Manual city and country (defaults: Istanbul, Turkey), or optional Core Location–based coordinates. |
+| **Methods** | In-app picker mapped to Aladhan `method` identifiers (see `CalculationMethod.swift`). |
+| **Notifications** | Local notifications and optional pre-prayer reminders. |
+| **Widget** | macOS widget shares data via App Group `group.com.ummugulsun.prayertimer`. |
+| **Privacy** | No bundled analytics SDKs. Network calls are HTTPS to Aladhan; location is only requested when auto-location is enabled. |
 
-### Build from Source
+---
 
-1. **Clone the repository**
+## Screenshots
+
+**Menu bar**
+
+![Menu bar with countdown](screenshots/menubar.png)
+
+*Countdown next to the icon.*
+
+**Popover**
+
+![Popover with schedule and settings](screenshots/app-view.png)
+
+*Next prayer, countdown, daily list, and settings.*
+
+---
+
+## Requirements
+
+| Item | Version / note |
+|------|------------------|
+| macOS | 13.0 (Ventura) or later |
+| Xcode | 15 or later (to build from source) |
+| Network | Required to fetch prayer times |
+| Apple Developer Program | Required only for your own signing, TestFlight, or Mac App Store distribution |
+
+---
+
+## Installation
+
+### From source (recommended for developers)
+
+1. Clone the repository.
+
+   ```bash
+   git clone https://github.com/ummugulsunn/prayertimer.git
+   cd prayertimer
+   ```
+
+2. Open the Xcode project.
+
+   ```bash
+   open PrayerTimer.xcodeproj
+   ```
+
+3. Select the **PrayerTimer** target, open **Signing & Capabilities**, and assign your **Team**.
+
+4. Build and run with **Product → Run** (`⌘R`). Grant location access if you use automatic location.
+
+5. To keep the app installed, build **Release**, copy `PrayerTimer.app` to `/Applications`, and optionally add it under **System Settings → General → Login Items**.
+
+### Pre-built archive (CI or local script)
+
+- **GitHub Actions:** open the [macOS build workflow](https://github.com/ummugulsunn/prayertimer/actions/workflows/macos-build.yml), pick the latest successful run, and download the **PrayerTimer-macOS** artifact (ZIP containing `PrayerTimer.app`).
+- **Local:** from the repository root, run `./scripts/build-release.sh`. Output: `build/PrayerTimer-macOS.zip`.
+
+Unsigned builds may trigger Gatekeeper on first launch. Use **Control-click → Open**, or run `xattr -cr /path/to/PrayerTimer.app` if needed.
+
+### App icons (optional regeneration)
+
 ```bash
-git clone https://github.com/ummugulsunn/prayertimer.git
-cd prayertimer
+swift scripts/generate_app_icons.swift Sources/Assets.xcassets/AppIcon.appiconset
 ```
 
-2. **Open in Xcode**
-```bash
-open PrayerTimer.xcodeproj
-```
+---
 
-3. **Configure signing**
-   - Select the PrayerTimer target
-   - Go to "Signing & Capabilities"
-   - Select your development team
+## Configuration
 
-4. **Build and run**
-   - Press `Cmd + R` or click the Run button
-   - Grant location permissions if using auto-location
+1. Click the menu bar icon.
+2. Open **Settings** (gear control).
+3. Turn **Otomatik Konum** off for manual city and country, or on for GPS.
+4. Press **Kaydet ve Güncelle** to refresh times from the network.
 
-5. **Install permanently**
-   - Build for Release configuration
-   - Copy `PrayerTimer.app` to `/Applications`
-   - Add to Login Items for auto-start
+**Defaults:** manual mode, Istanbul / Turkey, adaptive countdown (most frequent when the next prayer is within one hour).
 
-**Optional:** Download a **Release** `.app` zip from [GitHub Actions](https://github.com/ummugulsunn/prayertimer/actions/workflows/macos-build.yml) (latest successful run → Artifacts), or run `./scripts/build-release.sh` locally. Unsigned builds may require **Right-click → Open** the first time.
+---
 
-## ⚙️ Configuration
+## Project layout
 
-### Setting Your Location
-
-1. Click the menu bar icon (🌙)
-2. Click the gear icon (⚙️) in the header
-3. Toggle "Otomatik Konum" (Auto Location) OFF
-4. Enter your city and country
-5. Click "Kaydet ve Güncelle" (Save and Update)
-
-### Default Settings
-- **Location Mode**: Manual
-- **City**: Istanbul
-- **Country**: Turkey
-- **Countdown updates**: Adaptive (most frequent when the next prayer is under one hour)
-
-## 🏗️ Architecture
-
-### Tech Stack
-- **Language**: Swift 5.9
-- **UI Framework**: SwiftUI
-- **Minimum macOS**: 13.0
-- **API**: Aladhan Prayer Times API
-
-### Project Structure
 ```
 PrayerTimer/
 ├── Sources/
-│   ├── App/
-│   │   └── PrayerTimerApp.swift       # Main app & menu bar UI
-│   ├── Models/
-│   │   └── APIResponse.swift          # Data models
-│   ├── ViewModels/
-│   │   └── PrayerTimeViewModel.swift  # Business logic
-│   ├── Services/
-│   │   └── PrayerTimeService.swift    # API service
-│   ├── Managers/
-│   │   ├── LocationManager.swift      # Location handling
-│   │   └── NotificationManager.swift  # Notifications
-│   ├── Shared/
-│   │   ├── SharedDefaults.swift       # UserDefaults wrapper
-│   │   └── TimingsCodec.swift         # JSON codecs
-│   └── Assets.xcassets/                 # App icons
-├── PrayerTimerWidget/                 # Widget extension
-└── Config/
-    └── Info.plist
+│   ├── App/                 PrayerTimerApp.swift (MenuBarExtra, popover, commands)
+│   ├── Models/              API models, calculation enums
+│   ├── ViewModels/          PrayerTimeViewModel
+│   ├── Services/            PrayerTimeService
+│   ├── Managers/            LocationManager, NotificationManager
+│   ├── Shared/              SharedDefaults, TimingsCodec
+│   ├── Views/               ContentView (previews / auxiliary UI)
+│   └── Assets.xcassets/     Application icons
+├── PrayerTimerWidget/       Widget extension
+├── Config/                  Info.plist
+├── scripts/                 build-release.sh, icon generator, ASC helpers
+├── AppStore/metadata/       Example App Store Connect copy (optional)
+├── APP_STORE_CONNECT.md     Notes for App Store Connect
+└── project.yml              XcodeGen definition (optional)
 ```
-
-### Key Components
-
-#### **AppDelegate**
-- Menu bar accessory policy (no Dock icon by default)
-- Allows intentional quit via **Shift+⌘Q** or the in-app **Quit…** confirmation; plain **⌘Q** is discouraged to avoid accidental exit
-
-#### **MenuBarContentView**
-- Main dropdown UI
-- Settings panel with location configuration
-- Prayer times list with live updates
-- Countdown timer display
-
-#### **PrayerTimeViewModel**
-- Manages prayer times state
-- Handles location (manual/auto)
-- Adaptive countdown scheduling; fetches from the API when the schedule refreshes
-- Fetches data from API
-
-## 🔧 Customization
-
-### Changing Prayer Time Calculation Method
-
-Use the in-app **calculation method** picker (backed by `CalculationMethod` and Aladhan `method` IDs). For reference, supported methods include:
-
-- 1: University of Islamic Sciences, Karachi
-- 2: Islamic Society of North America (ISNA)
-- 3: Muslim World League
-- 4: Umm Al-Qura University, Makkah
-- 5: Egyptian General Authority of Survey
-- (and others — see `CalculationMethod.swift` and [Aladhan docs](https://aladhan.com/prayer-times-api))
-
-### Adjusting Warning Time
-
-Edit `PrayerTimerApp.swift`:
-```swift
-.foregroundColor(minutes < 15 ? .orange : .primary)
-// Change 15 to your preferred warning threshold
-```
-
-## 🐛 Troubleshooting
-
-### App Won't Start
-- Check macOS version (13.0+ required)
-- Verify code signing configuration
-- Check Console.app for error messages
-
-### Prayer Times Not Loading
-1. Open Settings panel (gear icon)
-2. Verify city/country spelling
-3. Click "Kaydet ve Güncelle" to refresh
-4. Check internet connection
-
-### Menu Bar Icon Not Appearing
-- Quit and relaunch the app
-- Check System Settings > Menu Bar settings
-- Ensure app has proper permissions
-
-### Countdown Not Updating
-- App automatically starts countdown on launch
-- Verify the app is running (check Activity Monitor)
-- If frozen, force quit and relaunch
-
-## 🚫 Known Limitations
-
-- **Quitting**: Use **Shift+⌘Q** (*Prayer Timer'dan Çıkış*) or **Quit…** in the popover; plain **⌘Q** is intentionally awkward for a menu bar app
-- **Manual installation required**: Not on the Mac App Store by default (see `APP_STORE_CONNECT.md` if you publish yourself)
-- **Requires internet**: For fetching prayer times
-- **Single timezone**: Based on provided location only
-
-## 🛠️ Development
-
-### Running in Debug Mode
-```bash
-xcodebuild -project PrayerTimer.xcodeproj -scheme PrayerTimer -configuration Debug build
-```
-
-### Building for Release
-```bash
-xcodebuild -project PrayerTimer.xcodeproj -scheme PrayerTimer -configuration Release build
-```
-
-### Code Signing
-Update `project.yml` with your team ID:
-```yaml
-DEVELOPMENT_TEAM: "YOUR_TEAM_ID"
-```
-
-## 📝 API Reference
-
-This app uses the [Aladhan Prayer Times API](https://aladhan.com/prayer-times-api):
-
-**Endpoint**: `https://api.aladhan.com/v1/timings`
-
-**Parameters**:
-- `date`: Calendar day (`DD-MM-YYYY`) for the request
-- `latitude` / `longitude`: Coordinates (from manual geocode or GPS)
-- `method`: Calculation method (optional; from in-app selection)
-
-The response includes `data.meta.timezone` (IANA), used when assembling local `Date` values from the returned time strings.
-
-## 🤝 Contributing
-
-This is a personal project, but suggestions and improvements are welcome!
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- [Aladhan API](https://aladhan.com/) for prayer times data
-- Apple's SwiftUI framework for modern UI development
-- Islamic Society of North America (ISNA) for calculation methods
-
-## 📧 Contact
-
-Created for personal use by [@ummugulsunn](https://github.com/ummugulsunn)
 
 ---
 
-**Note**: This app was built for personal use and may not cover all edge cases or regional variations. Use at your own discretion and always verify prayer times with local mosques or authorities.
+## Architecture
 
-## 🎯 Roadmap
+- **PrayerTimerApp** — Application entry point: `MenuBarExtra`, popover content, keyboard shortcuts, accessibility labels.
+- **PrayerTimeViewModel** — Owns schedule and countdown state, persists settings, coordinates notifications and widget reloads.
+- **PrayerTimeService** — Performs `GET` requests to Aladhan; decodes timings and `meta.timezone`.
+- **TimingsCodec** — Combines API time strings with the correct IANA time zone; prefers **Imsak** when the API supplies it separately from Fajr.
+- **Sandbox** — Declared in entitlements: outbound network, App Group for the widget. No user-selected file entitlement.
 
-Future improvements (maybe):
-- [x] Widget support for Notification Center
-- [ ] Multiple location profiles
-- [x] Prayer time notifications
-- [ ] Qibla direction indicator
-- [ ] Hijri calendar integration
-- [ ] Customizable themes
+**Quitting:** use **Shift+⌘Q** (*Prayer Timer'dan Çıkış*) or **Quit…** in the popover footer. Standard **⌘Q** is deliberately inconvenient to reduce accidental exits from a menu bar–only app.
 
 ---
 
-Made with ❤️ for the Muslim community
+## Customization
+
+- **Calculation method:** use the in-app picker. Reference IDs and labels live in `CalculationMethod.swift` and the [Aladhan API documentation](https://aladhan.com/prayer-times-api).
+- **“Urgent” window (orange):** adjust the minute threshold in `PrayerTimerApp.swift` where the menu bar label chooses orange vs default foreground.
+
+---
+
+## Troubleshooting
+
+| Symptom | What to try |
+|---------|-------------|
+| App will not open after download | Control-click the app → **Open**; or clear quarantine: `xattr -cr /Applications/PrayerTimer.app` |
+| No icon in the menu bar | Confirm the process is running; check for menu bar management utilities that hide icons |
+| Times do not load | Check network; verify city and country strings; use **Kaydet ve Güncelle** |
+| Widget is empty | Launch the main app at least once so shared defaults are populated; verify App Group and signing match for both targets |
+| Countdown stalls | Relaunch; if the app is hung, quit from Activity Monitor and reopen |
+
+---
+
+## API reference
+
+| Item | Value |
+|------|--------|
+| Base URL | `https://api.aladhan.com/v1/timings` |
+| Query | `date` (`DD-MM-YYYY`), `latitude`, `longitude`, optional `method` |
+| Response | `data.timings` (string times) and `data.meta.timezone` (IANA zone used when building `Date` values) |
+
+Official documentation: [Aladhan Prayer Times API](https://aladhan.com/prayer-times-api).
+
+---
+
+## Distribution and App Store
+
+Default CI artifacts are **not** signed with a Developer ID. For public distribution without Gatekeeper friction, sign with your Apple Developer account or follow Mac App Store procedures.
+
+See **`APP_STORE_CONNECT.md`** and **`AppStore/metadata/`** for optional App Store Connect copy and `asc` workflow notes (`scripts/asc-push-metadata.sh`).
+
+---
+
+## Contributing
+
+1. Fork the repository.  
+2. Create a branch (`git checkout -b feature/your-change`).  
+3. Commit with clear messages.  
+4. Open a pull request against `main`.
+
+Suggestions and bug reports are welcome.
+
+---
+
+## License
+
+This project is released under the **MIT License**. See [LICENSE](LICENSE).
+
+---
+
+## Acknowledgments
+
+- [Aladhan](https://aladhan.com/) for prayer time data and API documentation  
+- Apple SwiftUI and platform frameworks  
+
+Maintainer: [@ummugulsunn](https://github.com/ummugulsunn)
+
+---
+
+**Disclaimer:** Third-party prayer-time services may differ slightly from official local timetables. When accuracy is critical, compare with your mosque or national authority.
+
+### Roadmap
+
+| Status | Item |
+|--------|------|
+| Done | Widget and shared container |
+| Done | Local notifications |
+| Open | Multiple saved locations |
+| Open | Qibla direction |
+| Open | Hijri calendar integration |
+| Open | Additional themes |
+
+---
+
+PrayerTimer is maintained for the benefit of the Muslim community and anyone who needs a simple macOS prayer-time companion.
